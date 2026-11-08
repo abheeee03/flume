@@ -134,3 +134,19 @@
   --font-sans: var(--font-geist-sans), "Glaze Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), "Glaze Mono", ui-monospace, monospace;
 }
+
+.glaze .wallet-adapter-button,
+.glaze .wallet-adapter-button-trigger {
+  height: var(--control);
+  border-radius: var(--radius-pill);
+  background: var(--paper);
+  color: var(--text-1);
+  font-family: inherit;
+  border: var(--line-width) solid var(--line-control);
+  line-height: 1;
+}
+
+.glaze .wallet-adapter-button:hover,
+.glaze .wallet-adapter-button-trigger:hover {
+  background: var(--hover);
+}
