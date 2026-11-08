@@ -22,12 +22,14 @@ export async function POST(req: NextRequest) {
       destinationOpportunityId,
       amountUsdc,
       minimumDestinationUsdc,
+      acknowledgeSlippage,
     }: {
       owner: string;
       sourceOpportunityId: string;
       destinationOpportunityId: string;
       amountUsdc: number;
-      minimumDestinationUsdc: number;
+      minimumDestinationUsdc?: number;
+      acknowledgeSlippage?: boolean;
     } = body;
 
     if (!owner || !sourceOpportunityId || !destinationOpportunityId) {
@@ -66,14 +68,26 @@ export async function POST(req: NextRequest) {
       (afterWithdrawUsdc - depositFeeUsdc).toFixed(6)
     );
 
-    if (netMigratedUsdc < minimumDestinationUsdc) {
+    const minRequired = minimumDestinationUsdc ?? Number((netMigratedUsdc * 0.9995).toFixed(6));
+
+    if (netMigratedUsdc < minRequired && !acknowledgeSlippage) {
       return NextResponse.json(
         {
-          error: `Minimum output guard triggered: expected ${netMigratedUsdc} USDC < minimum ${minimumDestinationUsdc} USDC`,
+          error: `Minimum output guard triggered: expected ${netMigratedUsdc} USDC < minimum ${minRequired} USDC`,
+          code: 'MINIMUM_OUTPUT_GUARD',
+          expectedUsdc: netMigratedUsdc,
+          minimumUsdc: minRequired,
+          sourceWithdrawFeeUsdc: Number(withdrawFeeUsdc.toFixed(6)),
+          destDepositFeeUsdc: Number(depositFeeUsdc.toFixed(6)),
         },
         { status: 400 }
       );
     }
+
+    const effectiveMinDestUsdc =
+      acknowledgeSlippage || netMigratedUsdc < minRequired
+        ? Number((netMigratedUsdc * 0.9995).toFixed(6))
+        : minRequired;
 
     const tx = new Transaction();
     tx.add(
@@ -93,7 +107,7 @@ export async function POST(req: NextRequest) {
       destMarket,
       amountUsdc,
       netMigratedUsdc,
-      minimumDestinationUsdc,
+      minimumDestinationUsdc: effectiveMinDestUsdc,
     });
 
     tx.add(...instructions);
@@ -124,7 +138,7 @@ export async function POST(req: NextRequest) {
       netMigratedUsdc,
       expectedDestinationUsdc: netMigratedUsdc,
       expectedDestinationSharesUi: netMigratedUsdc,
-      minimumDestinationUsdc,
+      minimumDestinationUsdc: effectiveMinDestUsdc,
       shareMint: destVaultOrReserveAddress,
       usdcMint: usdcMint.toBase58(),
       blockhash: latest.blockhash,

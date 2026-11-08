@@ -3,42 +3,56 @@
 import { formatPercent, formatUsd } from "@/lib/format";
 import type { UserPosition } from "@/types/flume";
 import { Badge } from "@/components/glaze/ui/badge";
-import { Button } from "@/components/glaze/ui/button";
-import { Card, CardDescription, CardFooter, CardHeader, CardMeta, CardTitle } from "@/components/glaze/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/glaze/ui/card";
 
 export function ActivePositionsBar({
   position,
-  usdcWalletBalance,
-  onUseWalletUsdc,
+  usdcWalletBalance: _usdcWalletBalance,
+  onInvestWalletUsdc: _onInvestWalletUsdc,
 }: {
   position: UserPosition;
-  usdcWalletBalance: number;
-  onUseWalletUsdc?: (amount: number) => void;
+  usdcWalletBalance?: number;
+  onInvestWalletUsdc?: () => void;
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          {position.protocol} {position.market}
-        </CardTitle>
+    <Card className="border-line-strong">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="type-heading-sm">Your Position</CardTitle>
+          <Badge variant="ok">Active</Badge>
+        </div>
         <CardDescription>
-          <span className="inline-flex flex-wrap items-center gap-2">
-            <Badge variant="ok">Open deposit</Badge>
-            <span className="tabular-nums">{formatUsd(position.depositedUsdc)} USDC</span>
-            <span>
-              Base {formatPercent(position.currentBaseApy)}, rewards {formatPercent(position.currentRewardApy)}
-            </span>
-          </span>
+          {position.protocol} {position.market}
         </CardDescription>
       </CardHeader>
-      {usdcWalletBalance > 0 && onUseWalletUsdc ? (
-        <CardFooter>
-          <CardMeta>Wallet still holds liquid USDC</CardMeta>
-          <Button variant="secondary" size="sm" onClick={() => onUseWalletUsdc(usdcWalletBalance)}>
-            Size the move to {formatUsd(usdcWalletBalance)}
-          </Button>
-        </CardFooter>
-      ) : null}
+      <CardContent className="flex flex-col gap-2.5 pt-0">
+        <div className="flex flex-col gap-0.5 rounded-panel border border-line-faint bg-field p-2.5">
+          <span className="type-caption text-text-3">Deposited Principal</span>
+          <span className="type-heading-sm tabular-nums text-text-1">
+            {formatUsd(position.depositedUsdc)} USDC
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-col gap-0.5 rounded-panel border border-line-faint bg-field p-2">
+            <span className="type-caption text-text-3">Base APY</span>
+            <span className="type-body-sm font-medium tabular-nums text-text-1">
+              {formatPercent(position.currentBaseApy)}
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5 rounded-panel border border-line-faint bg-field p-2">
+            <span className="type-caption text-text-3">Reward APY</span>
+            <span className="type-body-sm font-medium tabular-nums text-text-1">
+              {formatPercent(position.currentRewardApy)}
+            </span>
+          </div>
+        </div>
+      </CardContent>
     </Card>
   );
 }

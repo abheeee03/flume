@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { DisclosureBanner } from "@/components/layout/DisclosureBanner";
+import React, { useState, useEffect } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Navbar } from "@/components/layout/Navbar";
 import { ActivePositionsBar } from "@/components/positions/ActivePositionsBar";
-import { YieldControlsBar } from "@/components/controls/YieldControlsBar";
 import { OpportunityCardList } from "@/components/opportunities/OpportunityCardList";
 import { FormulaBreakdownModal } from "@/components/opportunities/FormulaBreakdownModal";
 import { MigrationPreviewDrawer } from "@/components/migration/MigrationPreviewDrawer";
@@ -14,19 +14,35 @@ import { usePositions } from "@/hooks/usePositions";
 import { useYieldComparison } from "@/hooks/useYieldComparison";
 import { useMigration } from "@/hooks/useMigration";
 import { Alert, AlertDescription, AlertTitle } from "@/components/glaze/ui/alert";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/glaze/ui/card";
+import { Badge } from "@/components/glaze/ui/badge";
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/glaze/ui/card";
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@/components/glaze/ui/segmented-control";
+import { Slider } from "@/components/glaze/ui/slider";
 import {
   EvaluatedOpportunity,
   HoldingHorizonDays,
   UserPosition,
 } from "@/types/flume";
+import { formatUsd } from "@/lib/format";
 
 export function Dashboard() {
-  const [principalUsd, setPrincipalUsd] = useState<number>(100);
+  const searchParams = useSearchParams();
+  const actParam = searchParams.get("act");
+  const amountParam = searchParams.get("amount");
+
   const [holdingDays, setHoldingDays] = useState<HoldingHorizonDays>(90);
   const [rewardHaircutPct, setRewardHaircutPct] = useState<number>(50);
   const [inspected, setInspected] = useState<EvaluatedOpportunity | null>(null);
-  const [sizedToWallet, setSizedToWallet] = useState(false);
+  const [actionSource, setActionSource] = useState<"deposit" | "wallet">("deposit");
+  const [hasHandledAct, setHasHandledAct] = useState(false);
 
   const {
     data: oppData,
@@ -48,31 +64,14 @@ export function Dashboard() {
     refetch: refetchPositions,
   } = usePositions();
 
-  const rankedOpportunities = useYieldComparison({
-    opportunities: oppData?.opportunities ?? [],
-    currentPosition: primaryPosition,
-    principalUsd,
-    holdingDays,
-    rewardHaircut: rewardHaircutPct / 100,
-  });
-
-  const migration = useMigration();
   const isDevnet = oppData?.devnet ?? true;
-  const verb = primaryPosition ? "move" : "invest";
 
-  useEffect(() => {
-    if (sizedToWallet || !balancesAvailable || usdcWalletBalance <= 0) return;
-    setPrincipalUsd(usdcWalletBalance);
-    setSizedToWallet(true);
-  }, [balancesAvailable, sizedToWallet, usdcWalletBalance]);
-
-  const routeSource: UserPosition | null =
-    primaryPosition ??
-    (connected && balancesAvailable && usdcWalletBalance > 0 && walletAddress
+  const walletRouteSource: UserPosition | null =
+    connected && balancesAvailable && usdcWalletBalance > 0 && walletAddress
       ? {
           opportunityId: "wallet-usdc",
           protocol: "Wallet",
-          market: "Devnet USDC",
+          market: isDevnet ? "Devnet USDC" : "USDC",
           depositedUsdc: usdcWalletBalance,
           rawShares: Math.round(usdcWalletBalance * 1_000_000).toString(),
           shareMintAddress: usdcMint,
@@ -82,17 +81,67 @@ export function Dashboard() {
           currentRewardApy: 0,
           source: "wallet_usdc",
           network: isDevnet ? "devnet" : "mainnet-beta",
-          lastRefreshedAt: Date.now(),
+          lastRefreshedAt: 0,
         }
-      : null);
+      : null;
 
-  const comparisonName = primaryPosition ? primaryPosition.protocol : "cash";
+  // Active source selected by user (either moving existing deposit or investing liquid wallet cash)
+  const isInvestingCash = actionSource === "wallet" || !primaryPosition;
+  const activeSource: UserPosition | null = isInvestingCash
+    ? walletRouteSource
+    : primaryPosition;
+
+  const verb = activeSource?.source === "wallet_usdc" || !primaryPosition ? "invest" : "move";
+  const comparisonPosition = isInvestingCash ? null : primaryPosition;
+
+  // Comparison principal for ranking opportunities on dashboard
+  const comparisonPrincipal = activeSource
+    ? activeSource.depositedUsdc
+    : 100;
+
+  const rankedOpportunities = useYieldComparison({
+    opportunities: oppData?.opportunities ?? [],
+    currentPosition: comparisonPosition,
+    principalUsd: comparisonPrincipal,
+    holdingDays,
+    rewardHaircut: rewardHaircutPct / 100,
+  });
+
+  const migration = useMigration();
+
+  const comparisonName = comparisonPosition ? comparisonPosition.protocol : "cash";
+
+  const maxAvailableUsdc = activeSource
+    ? activeSource.depositedUsdc
+    : 100;
+
+  // Handle direct activation from compare page
+  useEffect(() => {
+    if (actParam && !hasHandledAct && rankedOpportunities.length > 0 && activeSource) {
+      const target = rankedOpportunities.find((r) => r.opportunity.id === actParam);
+      if (target) {
+        const amt = amountParam ? Math.min(Number(amountParam), maxAvailableUsdc) : maxAvailableUsdc;
+        migration.openPreview(target, activeSource, amt > 0 ? amt : maxAvailableUsdc);
+        setHasHandledAct(true);
+      }
+    }
+  }, [actParam, amountParam, hasHandledAct, rankedOpportunities, activeSource, maxAvailableUsdc, migration]);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
-      <div className="flex flex-col gap-3">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8">
+      {/* Header section with brand, navigation & inline filter bar */}
+      <div className="flex flex-col gap-4 border-b border-line-faint pb-4">
+        {/* Top brand & navbar row */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="type-title">Flume</h1>
+          <div className="flex items-center gap-4">
+            <h1 className="type-title">Flume</h1>
+            <Link
+              href="/compare"
+              className="type-label-sm text-text-2 hover:text-text-1 transition-colors"
+            >
+              Compare Protocols ↗
+            </Link>
+          </div>
           <Navbar
             connected={connected}
             isDevnet={isDevnet}
@@ -106,12 +155,78 @@ export function Dashboard() {
             }}
           />
         </div>
-        <p className="type-body text-text-2">
-          {verb === "invest"
-            ? "Compare USDC yields and invest from your wallet."
-            : "Compare USDC yields and move an open deposit."}
-        </p>
-        <DisclosureBanner isDevnet={isDevnet} usdcMint={usdcMint} />
+
+        {/* Filter Bar: Select Source + Assumptions (Horizon & Haircut) */}
+        <div className="flex flex-wrap items-center gap-4 pt-1">
+          {/* Select Source */}
+          {primaryPosition && walletRouteSource && usdcWalletBalance > 0 ? (
+            <div className="flex items-center gap-2">
+              <span className="type-label-sm text-text-3">Source:</span>
+              <SegmentedControl
+                size="sm"
+                value={actionSource}
+                onValueChange={(val) => setActionSource(val as "deposit" | "wallet")}
+              >
+                <SegmentedControlItem value="deposit">
+                  Move {primaryPosition.protocol} ({formatUsd(primaryPosition.depositedUsdc)})
+                </SegmentedControlItem>
+                <SegmentedControlItem value="wallet">
+                  Invest extra cash ({formatUsd(usdcWalletBalance)})
+                </SegmentedControlItem>
+              </SegmentedControl>
+            </div>
+          ) : primaryPosition ? (
+            <div className="flex items-center gap-2">
+              <span className="type-label-sm text-text-3">Source:</span>
+              <Badge variant="ok">
+                {primaryPosition.protocol} deposit ({formatUsd(primaryPosition.depositedUsdc)})
+              </Badge>
+            </div>
+          ) : connected && balancesAvailable && usdcWalletBalance > 0 ? (
+            <div className="flex items-center gap-2">
+              <span className="type-label-sm text-text-3">Source:</span>
+              <Badge variant="neutral">
+                Wallet ({formatUsd(usdcWalletBalance)})
+              </Badge>
+            </div>
+          ) : null}
+
+          {/* Holding Horizon */}
+          <div className="flex items-center gap-2">
+            <span className="type-label-sm text-text-3">Horizon:</span>
+            <SegmentedControl
+              size="sm"
+              value={String(holdingDays)}
+              onValueChange={(val) => setHoldingDays(Number(val) as HoldingHorizonDays)}
+            >
+              {[7, 30, 90, 365].map((d) => (
+                <SegmentedControlItem key={d} value={String(d)}>
+                  {d}d
+                </SegmentedControlItem>
+              ))}
+            </SegmentedControl>
+          </div>
+
+          {/* Reward Haircut */}
+          <div className="flex items-center gap-2">
+            <span className="type-label-sm text-text-3 whitespace-nowrap">
+              Haircut: {rewardHaircutPct}%
+            </span>
+            <div className="w-24 sm:w-28">
+              <Slider
+                aria-label="Reward haircut"
+                min={0}
+                max={100}
+                step={5}
+                value={[rewardHaircutPct]}
+                onValueChange={(val) => {
+                  const next = Array.isArray(val) ? val[0] : val;
+                  if (typeof next === "number") setRewardHaircutPct(next);
+                }}
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       {balanceError ? (
@@ -123,67 +238,62 @@ export function Dashboard() {
         </Alert>
       ) : null}
 
-      {primaryPosition ? (
-        <ActivePositionsBar
-          position={primaryPosition}
-          usdcWalletBalance={balancesAvailable ? usdcWalletBalance : 0}
-          onUseWalletUsdc={(amount) => {
-            setSizedToWallet(true);
-            setPrincipalUsd(amount);
-          }}
-        />
-      ) : (
-        <p className="type-body text-text-2">
-          {connected
-            ? balancesAvailable
-              ? `No open deposit. Invest ${usdcWalletBalance.toFixed(2)} USDC from this wallet, or set another amount below.`
-              : "No open deposit yet. The devnet USDC balance is still loading."
-            : "No open deposit. Connect a devnet wallet to invest official USDC."}
-        </p>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{verb === "invest" ? "Investment" : "Move"}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <YieldControlsBar
-            purpose={verb}
-            principalUsd={principalUsd}
-            onPrincipal={(value) => {
-              setSizedToWallet(true);
-              setPrincipalUsd(value);
+      {/* Main Two-Column Layout */}
+      <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+        {/* Left Side: Lending Protocols (takes remaining space) */}
+        <section className="flex-1 min-w-0 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h2 className="type-heading">Lending Protocols</h2>
+            <span className="type-label-sm text-text-2">
+              {rankedOpportunities.length} markets available
+            </span>
+          </div>
+          <OpportunityCardList
+            rows={rankedOpportunities}
+            loading={oppLoading}
+            currentName={comparisonName}
+            verb={verb}
+            canFund={Boolean(activeSource)}
+            onInspect={setInspected}
+            onAct={(row) => {
+              if (activeSource) {
+                migration.openPreview(row, activeSource, maxAvailableUsdc);
+              }
             }}
-            holdingDays={holdingDays}
-            onHoldingDays={setHoldingDays}
-            rewardHaircut={rewardHaircutPct / 100}
-            onRewardHaircut={(value) => setRewardHaircutPct(Math.round(value * 100))}
-            walletUsdc={balancesAvailable ? usdcWalletBalance : undefined}
           />
-        </CardContent>
-      </Card>
+        </section>
 
-      <section className="flex flex-col gap-3">
-        <div className="flex flex-col gap-1">
-          <h2 className="type-heading">Markets</h2>
-          <p className="type-body-sm text-text-2">
-            {oppLoading
-              ? "Loading USDC markets."
-              : `Ranked by net return over ${holdingDays} days. ${rankedOpportunities.length} USDC markets.`}
-          </p>
-        </div>
-        <OpportunityCardList
-          rows={rankedOpportunities}
-          loading={oppLoading}
-          currentName={comparisonName}
-          verb={verb}
-          canFund={Boolean(routeSource)}
-          onInspect={setInspected}
-          onAct={(row) => {
-            if (routeSource) migration.openPreview(row, routeSource);
-          }}
-        />
-      </section>
+        {/* Vertical divider */}
+        <div className="hidden lg:block w-px self-stretch bg-line" />
+
+        {/* Right Side: Fixed/Sticky Your Position Card (w-full lg:w-72 xl:w-80 shrink-0 sticky top-6) */}
+        <aside className="w-full shrink-0 lg:w-72 xl:w-80 lg:sticky lg:top-6 self-start">
+          {primaryPosition ? (
+            <ActivePositionsBar
+              position={primaryPosition}
+              usdcWalletBalance={balancesAvailable ? usdcWalletBalance : 0}
+            />
+          ) : (
+            <Card className="border-line-strong">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="type-heading-sm">Your Position</CardTitle>
+                  <Badge variant={connected ? "ok" : "neutral"}>
+                    {connected ? "Connected" : "Disconnected"}
+                  </Badge>
+                </div>
+                <CardDescription>
+                  {connected
+                    ? balancesAvailable
+                      ? `No open deposit. You have ${formatUsd(usdcWalletBalance)} liquid USDC in your wallet ready to invest.`
+                      : "Reading devnet balances..."
+                    : "Connect a Solana wallet to view your active deposits or invest USDC."}
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
+        </aside>
+      </div>
 
       <FormulaBreakdownModal
         row={inspected}
@@ -194,13 +304,31 @@ export function Dashboard() {
       />
       <MigrationPreviewDrawer
         row={migration.selectedEvaluation}
-        mode={verb}
-        sourceName={primaryPosition ? primaryPosition.protocol : "your wallet"}
+        mode={migration.sourcePosition?.source === "wallet_usdc" ? "invest" : verb}
+        sourceName={
+          migration.sourcePosition?.source === "wallet_usdc"
+            ? "your wallet"
+            : (migration.sourcePosition?.protocol ?? "your wallet")
+        }
+        amountUsdc={migration.amountUsdc}
+        onAmountChange={migration.updateAmount}
+        maxAmountUsdc={
+          migration.sourcePosition?.source === "wallet_usdc"
+            ? usdcWalletBalance
+            : (migration.sourcePosition?.depositedUsdc ?? maxAvailableUsdc)
+        }
         built={migration.builtTx}
         simulation={migration.simulation}
         pending={migration.isBuilding || migration.isExecuting}
         error={migration.error}
-        canSign={Boolean(connected && routeSource)}
+        acknowledgeSlippage={migration.acknowledgeSlippage}
+        onAcknowledgeSlippage={migration.toggleAcknowledgeSlippage}
+        guardDetails={migration.guardDetails}
+        primaryPosition={primaryPosition}
+        walletPosition={walletRouteSource}
+        walletUsdcAvailable={balancesAvailable ? usdcWalletBalance : 0}
+        onSwitchSource={migration.switchSource}
+        canSign={Boolean(connected && activeSource)}
         onOpenChange={(open) => {
           if (!open) migration.closePreview();
         }}

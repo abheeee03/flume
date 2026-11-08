@@ -34,16 +34,18 @@ export function Navbar({
 
   return (
     <header className="flex flex-wrap items-center justify-end gap-2">
-      <Badge variant="outline">{isDevnet ? "Devnet" : "Mainnet"}</Badge>
       {connected && balancesAvailable ? (
-        <p className="type-body-sm text-text-2 tabular-nums">
-          {usdcBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC
-          <span className="text-text-3"> · </span>
-          {solBalance.toFixed(4)} SOL
-        </p>
+        <div className="flex items-center gap-1.5">
+          <Badge variant="ok" className="tabular-nums">
+            {usdcBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC
+          </Badge>
+          <Badge variant="neutral" className="tabular-nums">
+            {solBalance.toFixed(3)} SOL
+          </Badge>
+        </div>
       ) : null}
       {connected && !balancesAvailable ? (
-        <p className="type-body-sm text-text-2">Balance unavailable</p>
+        <Badge variant="warn">Loading balance…</Badge>
       ) : null}
       {connected && address ? (
         <Button variant="secondary" onClick={() => disconnect()}>

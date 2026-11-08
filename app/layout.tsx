@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Inter } from "next/font/google";
 import { Providers } from "@/app/providers";
 import { GlazePortalProvider } from "@/lib/glaze/portal";
 import "@/components/glaze/styles.css";
@@ -15,6 +15,8 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
 });
 
+const inter = Inter();
+
 export const metadata: Metadata = {
   title: "Flume",
   description: "Capital, constantly optimized. The yield router for Solana.",
@@ -22,7 +24,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" data-theme="dark" className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html lang="en" data-theme="dark" className={`${inter.className}`}>
       <body className="glaze min-h-dvh bg-page text-text-1">
         <GlazePortalProvider>
           <Providers>{children}</Providers>

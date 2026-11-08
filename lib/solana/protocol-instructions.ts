@@ -7,6 +7,7 @@ import {
 import {
   TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
+  createBurnInstruction,
   createTransferCheckedInstruction,
   getAssociatedTokenAddressSync,
 } from '@solana/spl-token';
@@ -109,6 +110,34 @@ export async function buildRealUsdcProtocolMigrationInstructions(params: {
     `Ensure Associated Token Account for real USDC (${usdcMint.toBase58().slice(0, 8)}...)`
   );
 
+  const requestedRawAmount = BigInt(Math.round(netMigratedUsdc * 1_000_000));
+
+  // If moving out of Meteora Dynamic Vault, burn the user's LP receipt tokens
+  if (sourceMarket?.protocolSlug === 'meteora') {
+    const { lpMintPda: sourceLpMintPda } = deriveMeteoraDynamicVaultAddresses(usdcMint);
+    const sourceUserLpAta = getAssociatedTokenAddressSync(sourceLpMintPda, userPubkey);
+    try {
+      const lpBal = await connection.getTokenAccountBalance(sourceUserLpAta);
+      const rawLp = BigInt(lpBal.value.amount);
+      if (rawLp > BigInt(0)) {
+        const burnAmount = requestedRawAmount <= rawLp ? requestedRawAmount : rawLp;
+        instructions.push(
+          createBurnInstruction(
+            sourceUserLpAta,
+            sourceLpMintPda,
+            userPubkey,
+            burnAmount
+          )
+        );
+        instructionsSummary.push(
+          `Burn ${(Number(burnAmount) / 1e6).toFixed(2)} Meteora LP shares to release USDC`
+        );
+      }
+    } catch {
+      // Source LP account doesn't exist or is empty
+    }
+  }
+
   // Check user's real on-chain USDC balance so simulation never fails with insufficient funds
   let rawUserUsdcBalance = BigInt(0);
   try {
@@ -117,8 +146,6 @@ export async function buildRealUsdcProtocolMigrationInstructions(params: {
   } catch {
     rawUserUsdcBalance = BigInt(0);
   }
-
-  const requestedRawAmount = BigInt(Math.round(netMigratedUsdc * 1_000_000));
 
   // 2. Check if target Meteora Vault or Kamino Reserve account is initialized on the active cluster
   const destAddrConfig = devnet

@@ -14,7 +14,7 @@ const SLIPPAGE_GUARD_BUFFER = 0.0005; // 0.05%
 export function evaluateOpportunity(params: {
   opportunity: YieldOpportunity;
   currentPosition: UserPosition | null;
-  sourceOpportunity?: YieldOpportunity | null;
+  sourceOpportunity?: { fees: { withdrawalBps: number } } | null;
   principalUsd: number;
   holdingDays: HoldingHorizonDays;
   rewardHaircut: number; // 0.0 to 1.0
