@@ -2,34 +2,22 @@
 
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useQuery } from '@tanstack/react-query';
-import { getActiveCluster } from '@/config/markets';
+import { getActiveUsdcMint } from '@/config/markets';
 import { NetworkCluster, UserPosition } from '@/types/flume';
 
 interface PositionsApiResponse {
   wallet: string;
   cluster: NetworkCluster;
   devnet: boolean;
+  usdcMint: string;
   vybeConnected: boolean;
+  solWalletBalance: number;
   usdcWalletBalance: number;
+  balancesAvailable: boolean;
+  balanceError: string | null;
   positions: UserPosition[];
   updatedAt: number;
 }
-
-const PREVIEW_DEFAULT_POSITION: UserPosition = {
-  opportunityId: 'save-main-usdc',
-  protocol: 'Save (Solend)',
-  market: 'Main Pool USDC',
-  depositedUsdc: 5000,
-  rawShares: '5000000000',
-  shareMintAddress: 'flSAVE',
-  programId: 'ALend7Ketfx5bxh6ghsCDXAoDrhvEmsXT3cynB6aPLgx',
-  marketAddress: 'GvjoVKNjBvQcFaSKUW1gTE7DxhSpjHbE69umVR5nPuQp',
-  currentBaseApy: 0.052,
-  currentRewardApy: 0.002,
-  source: 'hybrid',
-  network: getActiveCluster(),
-  lastRefreshedAt: Date.now(),
-};
 
 export function usePositions() {
   const { publicKey, connected } = useWallet();
@@ -45,12 +33,20 @@ export function usePositions() {
       return res.json();
     },
     enabled: Boolean(connected && walletAddress),
-    refetchInterval: 20_000,
+    refetchInterval: 15_000,
   });
 
-  const activePositions = query.data?.positions ?? [];
-  const primaryPosition: UserPosition =
-    activePositions[0] ?? PREVIEW_DEFAULT_POSITION;
+  const activePositions = (query.data?.positions ?? []).filter(
+    (position) => position.source !== 'wallet_usdc' && position.depositedUsdc > 0
+  );
+  const balancesAvailable = query.data?.balancesAvailable ?? false;
+  const solWalletBalance = balancesAvailable
+    ? (query.data?.solWalletBalance ?? 0)
+    : 0;
+  const usdcWalletBalance = balancesAvailable
+    ? (query.data?.usdcWalletBalance ?? 0)
+    : 0;
+  const primaryPosition = activePositions[0] ?? null;
 
   return {
     ...query,
@@ -58,8 +54,11 @@ export function usePositions() {
     walletAddress,
     positions: activePositions,
     primaryPosition,
-    isSimulatedPreview: !connected || activePositions.length === 0,
-    usdcWalletBalance: query.data?.usdcWalletBalance ?? 0,
+    solWalletBalance,
+    usdcWalletBalance,
+    balancesAvailable,
+    balanceError: query.data?.balanceError ?? null,
+    usdcMint: query.data?.usdcMint ?? getActiveUsdcMint(),
     vybeConnected: query.data?.vybeConnected ?? false,
   };
 }

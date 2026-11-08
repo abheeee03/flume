@@ -15,9 +15,11 @@ import {
 import { Status } from "@/components/glaze/ui/status";
 
 export function MigrationSuccessModal({
+  mode,
   signature,
   onOpenChange,
 }: {
+  mode: "invest" | "move";
   signature: string | null;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -25,9 +27,9 @@ export function MigrationSuccessModal({
     <Dialog open={signature != null} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Migration confirmed</DialogTitle>
+          <DialogTitle>{mode === "invest" ? "Investment confirmed" : "Move confirmed"}</DialogTitle>
           <DialogDescription>
-            The burn, USDC transfer, and destination mint landed in one devnet transaction.
+            The devnet USDC transaction landed. Balances refresh from the wallet.
           </DialogDescription>
         </DialogHeader>
         {signature ? (

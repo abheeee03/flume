@@ -20,6 +20,7 @@ import { Step, StepIndicator, StepText, StepTitle, Steps } from "@/components/gl
 
 export function MigrationPreviewDrawer({
   row,
+  mode,
   sourceName,
   built,
   simulation,
@@ -30,6 +31,7 @@ export function MigrationPreviewDrawer({
   onExecute,
 }: {
   row: EvaluatedOpportunity | null;
+  mode: "invest" | "move";
   sourceName: string;
   built: MigrationBuildResponse | null;
   simulation: SimulationResult | null;
@@ -46,10 +48,12 @@ export function MigrationPreviewDrawer({
     <Sheet open={row != null} onOpenChange={onOpenChange}>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>Preview migration</SheetTitle>
+          <SheetTitle>{mode === "invest" ? "Invest" : "Move funds"}</SheetTitle>
           <SheetDescription>
             {destination
-              ? `Move ${formatUsd(row.principalUsd)} from ${sourceName} into ${destination.protocol} ${destination.market}.`
+              ? mode === "invest"
+                ? `Invest ${formatUsd(row.principalUsd)} of devnet USDC into ${destination.protocol} ${destination.market}.`
+                : `Move ${formatUsd(row.principalUsd)} from ${sourceName} into ${destination.protocol} ${destination.market}.`
               : "Choose a market."}
           </SheetDescription>
         </SheetHeader>
@@ -59,13 +63,17 @@ export function MigrationPreviewDrawer({
               <Step step={1}>
                 <StepIndicator />
                 <StepText>
-                  <StepTitle>Withdraw from {sourceName}</StepTitle>
+                  <StepTitle>
+                    {mode === "invest" ? "Send USDC from the wallet" : `Withdraw from ${sourceName}`}
+                  </StepTitle>
                 </StepText>
               </Step>
               <Step step={2}>
                 <StepIndicator />
                 <StepText>
-                  <StepTitle>Receive USDC in the wallet</StepTitle>
+                  <StepTitle>
+                    {mode === "invest" ? "Keep the official USDC mint" : "Receive USDC in the wallet"}
+                  </StepTitle>
                 </StepText>
               </Step>
               <Step step={3}>
@@ -85,7 +93,7 @@ export function MigrationPreviewDrawer({
             </Steps>
             <DataList>
               <DataListItem>
-                <DataListLabel>Gross withdrawal</DataListLabel>
+                <DataListLabel>{mode === "invest" ? "Amount" : "Gross withdrawal"}</DataListLabel>
                 <DataListValue>{formatUsd(row.principalUsd)}</DataListValue>
               </DataListItem>
               <DataListItem>
@@ -142,7 +150,7 @@ export function MigrationPreviewDrawer({
               {error ? <Status status="fail">{error}</Status> : null}
               {!canSign && !error ? (
                 <p className="type-body-sm text-text-2">
-                  Connect a devnet wallet with a seeded position to simulate and sign.
+                  Connect a devnet wallet that holds official USDC to simulate and sign.
                 </p>
               ) : null}
               {simulation ? (
@@ -157,8 +165,8 @@ export function MigrationPreviewDrawer({
               ) : null}
             </div>
             <p className="type-caption text-text-3">
-              Net APY after the move is {formatPercent(row.netApyAfterCost)}. Every instruction runs in one Solana
-              transaction. If any step fails, none of them land.
+              Net APY after this {mode === "invest" ? "investment" : "move"} is {formatPercent(row.netApyAfterCost)}.
+              Every instruction runs in one Solana transaction. If any step fails, none of them land.
             </p>
           </SheetBody>
         ) : null}
@@ -169,7 +177,7 @@ export function MigrationPreviewDrawer({
             disabled={!canSign || pending || simulation?.success !== true}
             onAction={onExecute}
           >
-            Sign and execute atomic migration
+            {mode === "invest" ? "Sign and invest" : "Sign and move"}
           </SheetAction>
         </SheetFooter>
       </SheetContent>

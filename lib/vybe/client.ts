@@ -1,4 +1,8 @@
-import { CURATED_MARKETS, getActiveCluster } from '@/config/markets';
+import {
+  CURATED_MARKETS,
+  getActiveCluster,
+  getActiveUsdcMint,
+} from '@/config/markets';
 import { UserPosition } from '@/types/flume';
 
 const VYBE_BASE_URL =
@@ -210,10 +214,7 @@ export async function fetchVybeUserPositions(ownerAddress: string): Promise<{
 
       for (const t of tokens) {
         const amt = t.uiAmount ?? t.amount ?? 0;
-        if (
-          t.mintAddress === 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' ||
-          t.symbol?.toUpperCase() === 'USDC'
-        ) {
+        if (t.mintAddress === getActiveUsdcMint()) {
           usdcWalletBalance = amt;
         }
 

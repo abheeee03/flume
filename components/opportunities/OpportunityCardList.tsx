@@ -1,7 +1,7 @@
 "use client";
 
 import { formatPercent, formatSignedUsd, formatUsdCompact, horizonLabel } from "@/lib/format";
-import type { EvaluatedOpportunity } from "@/types/flume";
+import type { EvaluatedOpportunity, StrategyCategory } from "@/types/flume";
 import { Badge } from "@/components/glaze/ui/badge";
 import { Button } from "@/components/glaze/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/glaze/ui/card";
@@ -9,8 +9,17 @@ import { Progress, ProgressLabel, ProgressValue } from "@/components/glaze/ui/pr
 import { Skeleton } from "@/components/glaze/ui/skeleton";
 import { RiskBadgeList } from "@/components/opportunities/RiskBadgeList";
 
-const strategyLabel = {
+const strategyLabel: Record<StrategyCategory, string> = {
   plain_lending: "Plain lending",
+  dynamic_vault: "Dynamic vault",
+  curated_vault: "Curated vault",
+  leveraged_looping: "Leveraged looping",
+  delta_neutral: "Delta neutral",
+};
+
+const STRATEGY_LABELS = {
+  plain_lending: "Plain lending",
+  dynamic_vault: "Dynamic vault",
   curated_vault: "Curated vault",
   leveraged_looping: "Leveraged looping",
   delta_neutral: "Delta neutral",
@@ -36,14 +45,18 @@ export function OpportunityCardList({
   rows,
   loading,
   currentName,
+  verb,
+  canFund,
   onInspect,
-  onMigrate,
+  onAct,
 }: {
   rows: EvaluatedOpportunity[];
   loading: boolean;
   currentName: string;
+  verb: "invest" | "move";
+  canFund: boolean;
   onInspect: (row: EvaluatedOpportunity) => void;
-  onMigrate: (row: EvaluatedOpportunity) => void;
+  onAct: (row: EvaluatedOpportunity) => void;
 }) {
   if (loading) {
     return (
@@ -65,6 +78,13 @@ export function OpportunityCardList({
         const utilization = opportunity.utilization;
         const countedReward = opportunity.rewardApy * row.rewardHaircut;
         const blocked = !row.isLiquiditySufficient;
+        const actionLabel = !canFund
+          ? verb === "invest"
+            ? "No USDC to invest"
+            : "Nothing to move"
+          : verb === "invest"
+            ? "Invest"
+            : "Move funds";
         return (
           <Card key={opportunity.id}>
             <CardHeader>
@@ -129,8 +149,8 @@ export function OpportunityCardList({
                 Inspect formula
               </Button>
               {row.isCurrentPosition ? null : (
-                <Button size="sm" disabled={blocked} onClick={() => onMigrate(row)}>
-                  {blocked ? "Not enough pool liquidity" : "Preview migration"}
+                <Button size="sm" disabled={blocked || !canFund} onClick={() => onAct(row)}>
+                  {blocked ? "Not enough liquidity" : actionLabel}
                 </Button>
               )}
             </CardFooter>

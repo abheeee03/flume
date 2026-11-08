@@ -97,7 +97,7 @@ export function FormulaBreakdownModal({
                   {row.breakEvenStatus === "instant"
                     ? "Breaks even immediately"
                     : row.breakEvenDays == null
-                      ? "Does not break even against the current position"
+                      ? `Does not beat ${currentName}`
                       : row.breakEvenStatus === "current"
                         ? "Already in this market, so the cost is zero"
                         : formatDays(row.breakEvenDays)}

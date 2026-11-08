@@ -1,14 +1,10 @@
 import { NextResponse } from 'next/server';
 import {
   CURATED_MARKETS,
-  USDC_MINTS,
   getActiveCluster,
+  getActiveUsdcMint,
   isDevnetMode,
 } from '@/config/markets';
-import {
-  ManagedSymbol,
-  getDeterministicMintAddresses,
-} from '@/lib/solana/devnet-mint-manager';
 import { evaluateMarketRisks } from '@/lib/yield-engine/risk-evaluator';
 import { YieldOpportunity } from '@/types/flume';
 
@@ -26,8 +22,6 @@ interface MeteoraVaultInfo {
   vault_address: string;
   token_address: string;
   closest_apy: number;
-  earned_amount: number;
-  total_amount: number;
 }
 
 let cachedOpportunities: {
@@ -39,6 +33,7 @@ let cachedOpportunities: {
 export async function GET() {
   const devnet = isDevnetMode();
   const cluster = getActiveCluster();
+  const activeUsdcMint = getActiveUsdcMint();
 
   if (
     cachedOpportunities &&
@@ -49,11 +44,11 @@ export async function GET() {
       opportunities: cachedOpportunities.data,
       cluster,
       devnet,
+      usdcMint: activeUsdcMint,
       updatedAt: cachedOpportunities.timestamp,
     });
   }
 
-  const devnetMints = getDeterministicMintAddresses();
   let llamaPools: LlamaPool[] = [];
   let meteoraUsdcApy: number | null = null;
   let liveSuccess = false;
@@ -114,7 +109,6 @@ export async function GET() {
     let tvlUsd = item.tvlUsd;
     let source: YieldOpportunity['dataSource'] = 'fallback_snapshot';
 
-    // Match live Mainnet pools
     if (item.id === 'kamino-main-usdc') {
       const match = llamaPools
         .filter(
@@ -188,31 +182,19 @@ export async function GET() {
       source = 'live_mainnet_api';
     }
 
-    const shareSym = item.receiptShareSymbol as ManagedSymbol;
-    const resolvedDevnetAddresses = {
-      ...item.addresses.devnet,
-      collateralOrShareMint:
-        devnetMints[shareSym] || item.addresses.devnet.collateralOrShareMint,
-      underlyingMint: devnetMints.flUSDC || USDC_MINTS.devnet,
-    };
-
     const activeAddresses = devnet
-      ? resolvedDevnetAddresses
+      ? item.addresses.devnet
       : item.addresses.mainnet;
 
     const headlineApy = Number((baseApy + rewardApy).toFixed(6));
 
     const partial: Omit<YieldOpportunity, 'riskFlags'> = {
       ...item,
-      assetMint: activeAddresses.underlyingMint,
+      assetMint: activeUsdcMint,
       baseApy: Number(baseApy.toFixed(6)),
       rewardApy: Number(rewardApy.toFixed(6)),
       headlineApy,
       tvlUsd,
-      addresses: {
-        devnet: resolvedDevnetAddresses,
-        mainnet: item.addresses.mainnet,
-      },
       activeAddresses,
       dataSource: source,
       updatedAt: now,
@@ -234,6 +216,7 @@ export async function GET() {
     opportunities,
     cluster,
     devnet,
+    usdcMint: activeUsdcMint,
     updatedAt: now,
   });
 }

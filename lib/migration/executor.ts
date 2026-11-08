@@ -1,5 +1,14 @@
 import { Connection, Transaction } from '@solana/web3.js';
 import { WalletContextState } from '@solana/wallet-adapter-react';
+import { getExplorerTxUrl } from '@/lib/solana/connection';
+import { NetworkCluster } from '@/types/flume';
+
+export function explorerTxUrl(
+  signature: string,
+  cluster?: NetworkCluster
+): string {
+  return getExplorerTxUrl(signature, cluster);
+}
 
 export async function executeMigrationTransaction(params: {
   connection: Connection;

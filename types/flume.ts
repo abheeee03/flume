@@ -1,17 +1,22 @@
 export type HoldingHorizonDays = 7 | 30 | 90 | 365;
 export type NetworkCluster = 'devnet' | 'mainnet-beta';
 
+export type MigrationBuildResponse = BuiltMigrationTransaction;
+
 export type StrategyCategory =
   | 'plain_lending'
   | 'dynamic_vault'
   | 'curated_vault'
-  | 'leveraged_looping';
+  | 'leveraged_looping'
+  | 'delta_neutral';
 
 export interface ProtocolNetworkAddresses {
   programId: string;
   marketOrVaultAddress: string;
   reserveOrPoolAddress: string;
   collateralOrShareMint: string;
+  reserveLiquiditySupply: string;
+  lendingMarketAuthority: string;
   underlyingMint: string;
   explorerUrl?: string;
 }
@@ -74,7 +79,7 @@ export interface UserPosition {
   marketAddress: string;
   currentBaseApy: number;
   currentRewardApy: number;
-  source: 'vybe_api' | 'onchain_rpc' | 'hybrid';
+  source: 'vybe_api' | 'onchain_rpc' | 'wallet_usdc';
   network: NetworkCluster;
   lastRefreshedAt: number;
 }
@@ -138,4 +143,24 @@ export interface BuiltMigrationTransaction {
   usdcMint: string;
   blockhash: string;
   lastValidBlockHeight: number;
+  instructionsSummary: string[];
+}
+
+export interface BuiltMigrationTransaction {
+  serializedTransaction: string; // base64
+  network: NetworkCluster;
+  sourceProtocol: string;
+  destinationProtocol: string;
+  sourceProgramId: string;
+  destinationProgramId: string;
+  amountUsdc: number;
+  netMigratedUsdc: number;
+  expectedDestinationUsdc: number;
+  expectedDestinationSharesUi: number;
+  minimumDestinationUsdc: number;
+  shareMint: string;
+  usdcMint: string;
+  blockhash: string;
+  lastValidBlockHeight: number;
+  instructionsSummary: string[];
 }

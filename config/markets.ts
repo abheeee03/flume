@@ -1,8 +1,9 @@
 import { NetworkCluster, YieldOpportunity } from '@/types/flume';
 
-/**
- * Reads DEVNET=true or NEXT_PUBLIC_DEVNET=true from environment variables.
- */
+export const MIN_PRINCIPAL_USD = 1;
+export const MAX_PRINCIPAL_USD = 1_000_000;
+export const DEFAULT_PRINCIPAL_USD = 5_000;
+
 export function isDevnetMode(): boolean {
   const serverEnv = process.env.DEVNET;
   const publicEnv = process.env.NEXT_PUBLIC_DEVNET;
@@ -15,39 +16,23 @@ export function getActiveCluster(): NetworkCluster {
 }
 
 export const USDC_MINTS = {
-  // Official Circle Devnet USDC + Flume Devnet Mint fallback
+  // Official Circle Devnet USDC Mint (https://faucet.circle.com)
   devnet: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
+  // Official Circle Mainnet USDC Mint
   mainnet: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
 } as const;
 
+export function getActiveUsdcMint(): string {
+  return isDevnetMode() ? USDC_MINTS.devnet : USDC_MINTS.mainnet;
+}
+
 export const PROTOCOL_PROGRAMS = {
-  kamino: {
-    // Kamino Lend V2 Program ID (same on Mainnet & Devnet per Kamino docs)
-    devnet: 'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD',
-    mainnet: 'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD',
-  },
-  meteoraVault: {
-    // Meteora Dynamic Yield Vault Program ID (https://devnet.meteora.ag/)
-    devnet: '24Uqj9JCLxUeoC3hGfh5W3s9FM9uCHDS2SG3LYwBpyTi',
-    mainnet: '24Uqj9JCLxUeoC3hGfh5W3s9FM9uCHDS2SG3LYwBpyTi',
-  },
-  meteoraDlmm: {
-    // Meteora DLMM Program ID (https://devnet.meteora.ag/)
-    devnet: 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo',
-    mainnet: 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo',
-  },
-  save: {
-    devnet: 'ALend7Ketfx5bxh6ghsCDXAoDrhvEmsXT3cynB6aPLgx',
-    mainnet: 'So1endDq2YkqhipRh3WViPa8hdiSpxWy6z3Z6tMCpAo',
-  },
-  marginfi: {
-    devnet: 'MFv2hWf31Z9kbCa1snEPYctwafyhdvnV7FZnsebVacA',
-    mainnet: 'MFv2hWf31Z9kbCa1snEPYctwafyhdvnV7FZnsebVacA',
-  },
-  drift: {
-    devnet: 'dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH',
-    mainnet: 'dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH',
-  },
+  kamino: 'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD',
+  meteoraVault: '24Uqj9JCLxUeoC3hGfh5W3s9FM9uCHDS2SG3LYwBpyTi',
+  meteoraDlmm: 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo',
+  save: 'So1endDq2YkqhipRh3WViPa8hdiSpxWy6z3Z6tMCpAo',
+  marginfi: 'MFv2hWf31Z9kbCa1snEPYctwafyhdvnV7FZnsebVacA',
+  drift: 'dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH',
 } as const;
 
 export const CURATED_MARKETS: Omit<
@@ -60,7 +45,7 @@ export const CURATED_MARKETS: Omit<
     protocolSlug: 'kamino',
     market: 'Main Market USDC',
     assetSymbol: 'USDC',
-    receiptShareSymbol: 'flKMNO',
+    receiptShareSymbol: 'kUSDC',
     baseApy: 0.0845,
     rewardApy: 0.0045,
     headlineApy: 0.089,
@@ -78,19 +63,23 @@ export const CURATED_MARKETS: Omit<
     dataSource: 'fallback_snapshot',
     addresses: {
       devnet: {
-        programId: PROTOCOL_PROGRAMS.kamino.devnet,
+        programId: PROTOCOL_PROGRAMS.kamino,
         marketOrVaultAddress: 'DxXdAyU3kCjnyggvHmY5nAwg5cRbbmdyX3npfDMjjMek',
         reserveOrPoolAddress: 'Ga4rZytCpq1unD4DbEJ5bkHeUz9g3oh9AAFEi6vSauXp',
-        collateralOrShareMint: 'flKMNO', // Resolved deterministically on Devnet
+        collateralOrShareMint: 'F8CA65p2c2N25u4C2N7T6G9u68y8R35tF4K5d6j6k7m8',
+        reserveLiquiditySupply: 'Bgq7trRgVMeq33yt235zM2onQ4bRDBsY5EWiTetF4qw6',
+        lendingMarketAuthority: '9DrvZvyWh1HuAoZxvYWMvkf2XCzryCpGgHqrMjyDWpmo',
         underlyingMint: USDC_MINTS.devnet,
         explorerUrl:
           'https://explorer.solana.com/address/KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD?cluster=devnet',
       },
       mainnet: {
-        programId: PROTOCOL_PROGRAMS.kamino.mainnet,
+        programId: PROTOCOL_PROGRAMS.kamino,
         marketOrVaultAddress: '7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF',
         reserveOrPoolAddress: 'D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59',
         collateralOrShareMint: 'B8V6WVjPxW1UGwVDfxH2d2r8SyT4cqn7dQRK6XneVa7D',
+        reserveLiquiditySupply: 'Bgq7trRgVMeq33yt235zM2onQ4bRDBsY5EWiTetF4qw6',
+        lendingMarketAuthority: '9DrvZvyWh1HuAoZxvYWMvkf2XCzryCpGgHqrMjyDWpmo',
         underlyingMint: USDC_MINTS.mainnet,
         explorerUrl:
           'https://explorer.solana.com/address/KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD',
@@ -103,7 +92,7 @@ export const CURATED_MARKETS: Omit<
     protocolSlug: 'meteora',
     market: 'Dynamic USDC Yield Vault',
     assetSymbol: 'USDC',
-    receiptShareSymbol: 'flMET',
+    receiptShareSymbol: 'vUSDC',
     baseApy: 0.081,
     rewardApy: 0.0065,
     headlineApy: 0.0875,
@@ -113,7 +102,7 @@ export const CURATED_MARKETS: Omit<
     withdrawalRestrictions: ['Instant unstake from Dynamic Vault reserve'],
     fees: {
       depositBps: 0,
-      withdrawalBps: 3, // 0.03% dynamic rebalance guard
+      withdrawalBps: 3,
     },
     strategyType: 'dynamic_vault',
     oracleProvider: 'Pyth',
@@ -121,18 +110,22 @@ export const CURATED_MARKETS: Omit<
     dataSource: 'fallback_snapshot',
     addresses: {
       devnet: {
-        programId: PROTOCOL_PROGRAMS.meteoraVault.devnet,
+        programId: PROTOCOL_PROGRAMS.meteoraVault,
         marketOrVaultAddress: '3ESUFCnRNgZ7Mn2mPPUMmXYaKU8jpnV9VtA17M7t2mHQ',
         reserveOrPoolAddress: 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo',
-        collateralOrShareMint: 'flMET',
+        collateralOrShareMint: 'FZN7QZ8ZUUAxMPfxYEYkH3cXUASzH8EqA6B4tyCL8f1j',
+        reserveLiquiditySupply: '5guD4Uz462GT4Y4gEuqyGsHZ59JGxFN4a3rF6KWguMcJ',
+        lendingMarketAuthority: 'HWzXGcGHy4tcpYfaRDCyLNzXqBTv3E6BttpCH2vJxArv',
         underlyingMint: USDC_MINTS.devnet,
         explorerUrl: 'https://devnet.meteora.ag/',
       },
       mainnet: {
-        programId: PROTOCOL_PROGRAMS.meteoraVault.mainnet,
+        programId: PROTOCOL_PROGRAMS.meteoraVault,
         marketOrVaultAddress: '3ESUFCnRNgZ7Mn2mPPUMmXYaKU8jpnV9VtA17M7t2mHQ',
         reserveOrPoolAddress: '5guD4Uz462GT4Y4gEuqyGsHZ59JGxFN4a3rF6KWguMcJ',
         collateralOrShareMint: 'FZN7QZ8ZUUAxMPfxYEYkH3cXUASzH8EqA6B4tyCL8f1j',
+        reserveLiquiditySupply: '5guD4Uz462GT4Y4gEuqyGsHZ59JGxFN4a3rF6KWguMcJ',
+        lendingMarketAuthority: 'HWzXGcGHy4tcpYfaRDCyLNzXqBTv3E6BttpCH2vJxArv',
         underlyingMint: USDC_MINTS.mainnet,
         explorerUrl: 'https://app.meteora.ag/vaults',
       },
@@ -144,7 +137,7 @@ export const CURATED_MARKETS: Omit<
     protocolSlug: 'save',
     market: 'Main Pool USDC',
     assetSymbol: 'USDC',
-    receiptShareSymbol: 'flSAVE',
+    receiptShareSymbol: 'cUSDC',
     baseApy: 0.052,
     rewardApy: 0.002,
     headlineApy: 0.054,
@@ -162,17 +155,21 @@ export const CURATED_MARKETS: Omit<
     dataSource: 'fallback_snapshot',
     addresses: {
       devnet: {
-        programId: PROTOCOL_PROGRAMS.save.devnet,
+        programId: 'ALend7Ketfx5bxh6ghsCDXAoDrhvEmsXT3cynB6aPLgx',
         marketOrVaultAddress: 'GvjoVKNjBvQcFaSKUW1gTE7DxhSpjHbE69umVR5nPuQp',
         reserveOrPoolAddress: 'FNNkz4RCQezSSS71rW2tvqZH1LCkTzaiG7Nd1LeA5x5y',
-        collateralOrShareMint: 'flSAVE',
+        collateralOrShareMint: 'E2PSSp3db1111111111111111111111111111111111',
+        reserveLiquiditySupply: 'Hix1111111111111111111111111111111111111111',
+        lendingMarketAuthority: 'GvjoVKNjBvQcFaSKUW1gTE7DxhSpjHbE69umVR5nPuQp',
         underlyingMint: USDC_MINTS.devnet,
       },
       mainnet: {
-        programId: PROTOCOL_PROGRAMS.save.mainnet,
+        programId: PROTOCOL_PROGRAMS.save,
         marketOrVaultAddress: '4UpD2fh7xH3VP9QQaXtsS1YY3bxzWhtfpks7FatyKvdY',
         reserveOrPoolAddress: 'BgxfHJDzm44T7XG68MYKx7YisTjZu73tVovyZSjJMpmw',
         collateralOrShareMint: '993dVFL2uXWYeoXuEBFXR4BijeXdTv4s6BzsCjJZuwqk',
+        reserveLiquiditySupply: '8SheGtsopRUDzdiD6v6BR9a6bqZ9QwywYQY99Fp5meNf',
+        lendingMarketAuthority: 'DdZR6zRFiUt4S5mg7AV1uKB2z1f1WzcNYCaTEEWPAuby',
         underlyingMint: USDC_MINTS.mainnet,
       },
     },
@@ -183,7 +180,7 @@ export const CURATED_MARKETS: Omit<
     protocolSlug: 'marginfi',
     market: 'Main Pool USDC',
     assetSymbol: 'USDC',
-    receiptShareSymbol: 'flMRGN',
+    receiptShareSymbol: 'mUSDC',
     baseApy: 0.074,
     rewardApy: 0.0,
     headlineApy: 0.074,
@@ -201,17 +198,21 @@ export const CURATED_MARKETS: Omit<
     dataSource: 'fallback_snapshot',
     addresses: {
       devnet: {
-        programId: PROTOCOL_PROGRAMS.marginfi.devnet,
-        marketOrVaultAddress: '4qp6Fx6tnZkY5Wropq9wUYgtFxXKwE6viZxFHg3rdAG8',
-        reserveOrPoolAddress: '2s37akK2eyBbp8DZgCm7RtsaEz8eJP3Nxd4urLHQv7yB',
-        collateralOrShareMint: 'flMRGN',
-        underlyingMint: USDC_MINTS.devnet,
-      },
-      mainnet: {
-        programId: PROTOCOL_PROGRAMS.marginfi.mainnet,
+        programId: PROTOCOL_PROGRAMS.marginfi,
         marketOrVaultAddress: '4qp6Fx6tnZkY5Wropq9wUYgtFxXKwE6viZxFHg3rdAG8',
         reserveOrPoolAddress: '2s37akK2eyBbp8DZgCm7RtsaEz8eJP3Nxd4urLHQv7yB',
         collateralOrShareMint: '2s37akK2eyBbp8DZgCm7RtsaEz8eJP3Nxd4urLHQv7yB',
+        reserveLiquiditySupply: '7jaiZR5Sk8hdYN9MxTpczTcwbWpb5WEoxSANuUwveuat',
+        lendingMarketAuthority: '3uxNepDbmkDNq6JhRja5Z8QwbTrfmkKP8AKZV5chYDGG',
+        underlyingMint: USDC_MINTS.devnet,
+      },
+      mainnet: {
+        programId: PROTOCOL_PROGRAMS.marginfi,
+        marketOrVaultAddress: '4qp6Fx6tnZkY5Wropq9wUYgtFxXKwE6viZxFHg3rdAG8',
+        reserveOrPoolAddress: '2s37akK2eyBbp8DZgCm7RtsaEz8eJP3Nxd4urLHQv7yB',
+        collateralOrShareMint: '2s37akK2eyBbp8DZgCm7RtsaEz8eJP3Nxd4urLHQv7yB',
+        reserveLiquiditySupply: '7jaiZR5Sk8hdYN9MxTpczTcwbWpb5WEoxSANuUwveuat',
+        lendingMarketAuthority: '3uxNepDbmkDNq6JhRja5Z8QwbTrfmkKP8AKZV5chYDGG',
         underlyingMint: USDC_MINTS.mainnet,
       },
     },
@@ -222,7 +223,7 @@ export const CURATED_MARKETS: Omit<
     protocolSlug: 'kamino',
     market: 'JLP-USDC Loop Vault',
     assetSymbol: 'USDC',
-    receiptShareSymbol: 'flLOOP',
+    receiptShareSymbol: 'kLOOP',
     baseApy: 0.036,
     rewardApy: 0.072,
     headlineApy: 0.108,
@@ -243,17 +244,21 @@ export const CURATED_MARKETS: Omit<
     dataSource: 'fallback_snapshot',
     addresses: {
       devnet: {
-        programId: PROTOCOL_PROGRAMS.kamino.devnet,
+        programId: PROTOCOL_PROGRAMS.kamino,
         marketOrVaultAddress: 'DxXdAyU3kCjnyggvHmY5nAwg5cRbbmdyX3npfDMjjMek',
         reserveOrPoolAddress: 'Ga4rZytCpq1unD4DbEJ5bkHeUz9g3oh9AAFEi6vSauXp',
-        collateralOrShareMint: 'flLOOP',
+        collateralOrShareMint: 'B8V6WVjPxW1UGwVDfxH2d2r8SyT4cqn7dQRK6XneVa7D',
+        reserveLiquiditySupply: 'Bgq7trRgVMeq33yt235zM2onQ4bRDBsY5EWiTetF4qw6',
+        lendingMarketAuthority: '9DrvZvyWh1HuAoZxvYWMvkf2XCzryCpGgHqrMjyDWpmo',
         underlyingMint: USDC_MINTS.devnet,
       },
       mainnet: {
-        programId: PROTOCOL_PROGRAMS.kamino.mainnet,
+        programId: PROTOCOL_PROGRAMS.kamino,
         marketOrVaultAddress: '7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF',
         reserveOrPoolAddress: 'D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59',
         collateralOrShareMint: 'B8V6WVjPxW1UGwVDfxH2d2r8SyT4cqn7dQRK6XneVa7D',
+        reserveLiquiditySupply: 'Bgq7trRgVMeq33yt235zM2onQ4bRDBsY5EWiTetF4qw6',
+        lendingMarketAuthority: '9DrvZvyWh1HuAoZxvYWMvkf2XCzryCpGgHqrMjyDWpmo',
         underlyingMint: USDC_MINTS.mainnet,
       },
     },
@@ -264,7 +269,7 @@ export const CURATED_MARKETS: Omit<
     protocolSlug: 'drift',
     market: 'Earn Spot Market USDC',
     assetSymbol: 'USDC',
-    receiptShareSymbol: 'flDRFT',
+    receiptShareSymbol: 'dUSDC',
     baseApy: 0.079,
     rewardApy: 0.008,
     headlineApy: 0.087,
@@ -282,17 +287,21 @@ export const CURATED_MARKETS: Omit<
     dataSource: 'fallback_snapshot',
     addresses: {
       devnet: {
-        programId: PROTOCOL_PROGRAMS.drift.devnet,
+        programId: PROTOCOL_PROGRAMS.drift,
         marketOrVaultAddress: 'JCNCMFXo5M5qwUPg2Utu1u6YWp3MbygxqBsBeXXJfrw',
         reserveOrPoolAddress: '6gMq3mRCKf8aP3ttTyYhuijnyTe3534w14MZ1f7T2F7q',
-        collateralOrShareMint: 'flDRFT',
+        collateralOrShareMint: '6gMq3mRCKf8aP3ttTyYhuijnyTe3534w14MZ1f7T2F7q',
+        reserveLiquiditySupply: 'GXWqPpjQpdz7KZw9p7f5PX2eGxHAhvpNXiviFkAB8zXg',
+        lendingMarketAuthority: 'JCNCMFXo5M5qwUPg2Utu1u6YWp3MbygxqBsBeXXJfrw',
         underlyingMint: USDC_MINTS.devnet,
       },
       mainnet: {
-        programId: PROTOCOL_PROGRAMS.drift.mainnet,
+        programId: PROTOCOL_PROGRAMS.drift,
         marketOrVaultAddress: 'JCNCMFXo5M5qwUPg2Utu1u6YWp3MbygxqBsBeXXJfrw',
         reserveOrPoolAddress: 'GXWqPpjQpdz7KZw9p7f5PX2eGxHAhvpNXiviFkAB8zXg',
         collateralOrShareMint: 'GXWqPpjQpdz7KZw9p7f5PX2eGxHAhvpNXiviFkAB8zXg',
+        reserveLiquiditySupply: 'GXWqPpjQpdz7KZw9p7f5PX2eGxHAhvpNXiviFkAB8zXg',
+        lendingMarketAuthority: 'JCNCMFXo5M5qwUPg2Utu1u6YWp3MbygxqBsBeXXJfrw',
         underlyingMint: USDC_MINTS.mainnet,
       },
     },

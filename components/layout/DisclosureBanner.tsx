@@ -1,24 +1,21 @@
-import { Alert, AlertDescription, AlertTitle } from "@/components/glaze/ui/alert";
+"use client";
 
-export function DisclosureBanner({ source }: { source?: string }) {
-  const sourceLabel =
-    source === "live_mainnet_api"
-      ? "Live mainnet rates are loaded."
-      : source === "mixed"
-        ? "Some rates are live and the rest use the fallback snapshot."
-        : source === "fallback_snapshot"
-          ? "External rates were unavailable, so this view uses the fallback snapshot."
-          : "Rates refresh from mainnet when the feed responds.";
+import { CopyButton } from "@/components/glaze/ui/copy-button";
 
+export function DisclosureBanner({
+  isDevnet,
+  usdcMint,
+}: {
+  isDevnet: boolean;
+  usdcMint: string;
+}) {
   return (
-    <Alert status="neutral">
-      <AlertTitle>Hybrid demo</AlertTitle>
-      <AlertDescription>
-        Yield rates and TVLs come from live Solana mainnet markets, with a deterministic fallback.
-        Wallet balances and one-transaction migrations run on Solana devnet using SPL receipt tokens.
-        {" "}
-        {sourceLabel}
-      </AlertDescription>
-    </Alert>
+    <p className="flex flex-wrap items-center gap-2 type-body-sm text-text-2">
+      <span>Official {isDevnet ? "devnet" : "mainnet"} USDC</span>
+      <span className="type-code-sm text-text-1">
+        {usdcMint.slice(0, 4)}…{usdcMint.slice(-4)}
+      </span>
+      <CopyButton value={usdcMint} label="mint" />
+    </p>
   );
 }

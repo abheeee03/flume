@@ -10,35 +10,46 @@ import { SegmentedControl, SegmentedControlItem } from "@/components/glaze/ui/se
 import { Slider } from "@/components/glaze/ui/slider";
 
 const HORIZONS: HoldingHorizonDays[] = [7, 30, 90, 365];
-const PRESETS = [1_000, 5_000, 10_000, 25_000];
+const PRESETS = [10, 20, 100, 1_000];
 
 export function YieldControlsBar({
+  purpose,
   principalUsd,
   onPrincipal,
   holdingDays,
   onHoldingDays,
   rewardHaircut,
   onRewardHaircut,
+  walletUsdc,
 }: {
+  purpose: "invest" | "move";
   principalUsd: number;
   onPrincipal: (value: number) => void;
   holdingDays: HoldingHorizonDays;
   onHoldingDays: (value: HoldingHorizonDays) => void;
   rewardHaircut: number;
   onRewardHaircut: (value: number) => void;
+  walletUsdc?: number;
 }) {
   const haircutPercent = Math.round(rewardHaircut * 100);
+  const presets = Array.from(
+    new Set(
+      walletUsdc && walletUsdc > 0
+        ? [...PRESETS, Number(walletUsdc.toFixed(2))]
+        : PRESETS,
+    ),
+  );
 
   return (
     <div className="flex flex-col gap-4">
       <Field>
-        <FieldLabel>Position size</FieldLabel>
+        <FieldLabel>{purpose === "invest" ? "Amount to invest" : "Amount to move"}</FieldLabel>
         <NumberInput
-          aria-label="Position size in USDC"
+          aria-label={purpose === "invest" ? "Amount to invest in USDC" : "Amount to move in USDC"}
           value={principalUsd}
           min={MIN_PRINCIPAL_USD}
           max={MAX_PRINCIPAL_USD}
-          step={100}
+          step={1}
           unit="USDC"
           onValueChange={(value) => {
             if (value != null) onPrincipal(value);
@@ -49,7 +60,7 @@ export function YieldControlsBar({
         </FieldDescription>
       </Field>
       <ChipGroup>
-        {PRESETS.map((preset) => (
+        {presets.map((preset) => (
           <Chip
             key={preset}
             pressed={principalUsd === preset}

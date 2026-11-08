@@ -1,179 +1,110 @@
 import {
   ComputeBudgetProgram,
+  Connection,
   PublicKey,
   Transaction,
-} from "@solana/web3.js";
-import {
-  ASSOCIATED_TOKEN_PROGRAM_ID,
-  TOKEN_PROGRAM_ID,
-  createAssociatedTokenAccountIdempotentInstruction,
-  createBurnCheckedInstruction,
-  createMintToCheckedInstruction,
-  createTransferCheckedInstruction,
-  getAssociatedTokenAddressSync,
-} from "@solana/spl-token";
-import { USDC_DECIMALS } from "@/config/markets";
-import { settlementAmounts } from "@/lib/yield-engine/calculator";
-import { opportunityById } from "@/lib/yield-engine/opportunities";
-import { getConnection } from "@/lib/solana/connection";
-import { getDevnetMints } from "@/lib/solana/devnet-mint-manager";
-import { toBaseUnits } from "@/lib/solana/units";
-import type { MigrationBuildRequest, MigrationBuildResponse, YieldOpportunity } from "@/types/flume";
+} from '@solana/web3.js';
+import { CURATED_MARKETS, getActiveCluster, isDevnetMode } from '@/config/markets';
+import { buildRealUsdcProtocolMigrationInstructions } from '@/lib/solana/protocol-instructions';
+import { BuiltMigrationTransaction } from '@/types/flume';
 
-export async function buildMigrationTransaction(
-  input: MigrationBuildRequest,
-  opportunities: YieldOpportunity[],
-): Promise<MigrationBuildResponse> {
-  if (input.sourceOpportunityId === input.destinationOpportunityId) {
-    throw new Error("Source and destination are the same market.");
-  }
-
-  const source = opportunityById(opportunities, input.sourceOpportunityId);
-  const destination = opportunityById(opportunities, input.destinationOpportunityId);
-  if (!source || !destination) {
-    throw new Error("Unknown source or destination market.");
-  }
-  if (!Number.isFinite(input.amountUsdc) || input.amountUsdc <= 0 || input.amountUsdc > 1_000_000) {
-    throw new Error("Amount must be between 0 and 1,000,000 USDC.");
-  }
-  if (!Number.isFinite(input.minimumDestinationUsdc) || input.minimumDestinationUsdc < 0) {
-    throw new Error("Minimum destination output is invalid.");
-  }
-
-  let owner: PublicKey;
-  try {
-    owner = new PublicKey(input.owner);
-  } catch {
-    throw new Error("Owner is not a public key.");
-  }
-
-  const settlement = settlementAmounts(input.amountUsdc, source, destination, false);
-  const expectedBase = toBaseUnits(settlement.expectedDestinationUsdc);
-  const minimumBase = toBaseUnits(input.minimumDestinationUsdc);
-  if (expectedBase < minimumBase) {
-    throw new Error("Expected shares are below the minimum-output guard.");
-  }
-
-  const mints = await getDevnetMints();
-  const sourceMint = mints.shareMints[source.id];
-  const destinationMint = mints.shareMints[destination.id];
-  if (!sourceMint || !destinationMint) {
-    throw new Error("Devnet receipt mint is not configured for this market.");
-  }
-
-  const userUsdc = getAssociatedTokenAddressSync(
-    mints.usdcMint,
+export async function buildAtomicMigrationTransaction(params: {
+  connection: Connection;
+  owner: string;
+  sourceOpportunityId: string;
+  destinationOpportunityId: string;
+  amountUsdc: number;
+  minimumDestinationUsdc: number;
+}): Promise<BuiltMigrationTransaction> {
+  const {
+    connection,
     owner,
-    false,
-    TOKEN_PROGRAM_ID,
-    ASSOCIATED_TOKEN_PROGRAM_ID,
-  );
-  const userSource = getAssociatedTokenAddressSync(
-    sourceMint,
-    owner,
-    false,
-    TOKEN_PROGRAM_ID,
-    ASSOCIATED_TOKEN_PROGRAM_ID,
-  );
-  const userDestination = getAssociatedTokenAddressSync(
-    destinationMint,
-    owner,
-    false,
-    TOKEN_PROGRAM_ID,
-    ASSOCIATED_TOKEN_PROGRAM_ID,
+    sourceOpportunityId,
+    destinationOpportunityId,
+    amountUsdc,
+    minimumDestinationUsdc,
+  } = params;
+
+  const userPubkey = new PublicKey(owner);
+  const sourceMarket = CURATED_MARKETS.find((m) => m.id === sourceOpportunityId);
+  const destMarket = CURATED_MARKETS.find(
+    (m) => m.id === destinationOpportunityId
   );
 
-  const amountBase = toBaseUnits(input.amountUsdc);
-  const netBase = toBaseUnits(settlement.netWithdrawnUsdc);
-  const transaction = new Transaction();
-  transaction.add(
-    ComputeBudgetProgram.setComputeUnitLimit({ units: 250_000 }),
-    ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 10_000 }),
-    createAssociatedTokenAccountIdempotentInstruction(
-      owner,
-      userUsdc,
-      owner,
-      mints.usdcMint,
-      TOKEN_PROGRAM_ID,
-      ASSOCIATED_TOKEN_PROGRAM_ID,
-    ),
-    createAssociatedTokenAccountIdempotentInstruction(
-      owner,
-      userSource,
-      owner,
-      sourceMint,
-      TOKEN_PROGRAM_ID,
-      ASSOCIATED_TOKEN_PROGRAM_ID,
-    ),
-    createAssociatedTokenAccountIdempotentInstruction(
-      owner,
-      userDestination,
-      owner,
-      destinationMint,
-      TOKEN_PROGRAM_ID,
-      ASSOCIATED_TOKEN_PROGRAM_ID,
-    ),
-    createBurnCheckedInstruction(
-      userSource,
-      sourceMint,
-      owner,
-      amountBase,
-      USDC_DECIMALS,
-      [],
-      TOKEN_PROGRAM_ID,
-    ),
+  if (!sourceMarket || !destMarket) {
+    throw new Error('Unknown source or destination market ID');
+  }
+
+  const devnet = isDevnetMode();
+  const cluster = getActiveCluster();
+
+  const withdrawFeeUsdc =
+    amountUsdc * (sourceMarket.fees.withdrawalBps / 10000);
+  const afterWithdrawUsdc = amountUsdc - withdrawFeeUsdc;
+  const depositFeeUsdc =
+    afterWithdrawUsdc * (destMarket.fees.depositBps / 10000);
+  const netMigratedUsdc = Number(
+    (afterWithdrawUsdc - depositFeeUsdc).toFixed(6)
   );
 
-  if (netBase > 0n) {
-    transaction.add(
-      createTransferCheckedInstruction(
-        mints.poolUsdcAccount,
-        mints.usdcMint,
-        userUsdc,
-        mints.authority.publicKey,
-        netBase,
-        USDC_DECIMALS,
-        [],
-        TOKEN_PROGRAM_ID,
-      ),
-      createTransferCheckedInstruction(
-        userUsdc,
-        mints.usdcMint,
-        mints.poolUsdcAccount,
-        owner,
-        netBase,
-        USDC_DECIMALS,
-        [],
-        TOKEN_PROGRAM_ID,
-      ),
+  if (netMigratedUsdc < minimumDestinationUsdc) {
+    throw new Error(
+      `Minimum output guard triggered: expected ${netMigratedUsdc} USDC < minimum ${minimumDestinationUsdc} USDC`
     );
   }
 
-  transaction.add(
-    createMintToCheckedInstruction(
-      destinationMint,
-      userDestination,
-      mints.authority.publicKey,
-      expectedBase,
-      USDC_DECIMALS,
-      [],
-      TOKEN_PROGRAM_ID,
-    ),
+  const tx = new Transaction();
+  tx.add(
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 250_000 }),
+    ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 10_000 })
   );
 
-  const connection = getConnection();
-  const latest = await connection.getLatestBlockhash("confirmed");
-  transaction.feePayer = owner;
-  transaction.recentBlockhash = latest.blockhash;
-  transaction.partialSign(mints.authority);
+  const {
+    instructions,
+    usdcMint,
+    destVaultOrReserveAddress,
+    instructionsSummary,
+  } = await buildRealUsdcProtocolMigrationInstructions({
+    connection,
+    userPubkey,
+    sourceMarket,
+    destMarket,
+    amountUsdc,
+    netMigratedUsdc,
+    minimumDestinationUsdc,
+  });
+
+  tx.add(...instructions);
+
+  const latest = await connection.getLatestBlockhash('confirmed');
+  tx.recentBlockhash = latest.blockhash;
+  tx.feePayer = userPubkey;
+
+  const sourceAddr = devnet
+    ? sourceMarket.addresses.devnet
+    : sourceMarket.addresses.mainnet;
+  const destAddr = devnet
+    ? destMarket.addresses.devnet
+    : destMarket.addresses.mainnet;
 
   return {
-    transaction: transaction.serialize({ requireAllSignatures: false }).toString("base64"),
-    expectedDestinationUsdc: settlement.expectedDestinationUsdc,
-    minimumDestinationUsdc: input.minimumDestinationUsdc,
-    netWithdrawnUsdc: settlement.netWithdrawnUsdc,
-    sourceWithdrawalFeeUsd: input.amountUsdc - settlement.netWithdrawnUsdc,
-    destinationDepositFeeUsd: settlement.netWithdrawnUsdc - settlement.expectedDestinationUsdc,
+    serializedTransaction: tx
+      .serialize({ requireAllSignatures: false })
+      .toString('base64'),
+    network: cluster,
+    sourceProtocol: sourceMarket.protocol,
+    destinationProtocol: destMarket.protocol,
+    sourceProgramId: sourceAddr.programId,
+    destinationProgramId: destAddr.programId,
+    amountUsdc,
+    netMigratedUsdc,
+    expectedDestinationUsdc: netMigratedUsdc,
+    expectedDestinationSharesUi: netMigratedUsdc,
+    minimumDestinationUsdc,
+    shareMint: destVaultOrReserveAddress,
+    usdcMint: usdcMint.toBase58(),
     blockhash: latest.blockhash,
+    lastValidBlockHeight: latest.lastValidBlockHeight,
+    instructionsSummary,
   };
 }
