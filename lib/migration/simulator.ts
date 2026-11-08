@@ -1,32 +1,45 @@
-import { Transaction, VersionedTransaction, type Connection } from "@solana/web3.js";
-import type { SimulationResult } from "@/types/flume";
+import { Connection, Transaction } from '@solana/web3.js';
+import { getActiveCluster } from '@/config/markets';
+import { SimulationResult } from '@/types/flume';
 
-export function deserializeTransaction(base64Tx: string): Transaction {
-  const binary = atob(base64Tx);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return Transaction.from(bytes);
-}
-
-export async function simulateMigration(
+export async function simulateMigrationTransaction(
   connection: Connection,
-  transaction: Transaction,
+  base64Transaction: string
 ): Promise<SimulationResult> {
-  const versioned = new VersionedTransaction(transaction.compileMessage());
-  const simulated = await connection.simulateTransaction(versioned, {
-    sigVerify: false,
-    replaceRecentBlockhash: true,
-    commitment: "confirmed",
-  });
-  const err = simulated.value.err;
+  const network = getActiveCluster();
+  try {
+    const rawBuffer = Buffer.from(base64Transaction, 'base64');
+    const transaction = Transaction.from(rawBuffer);
 
-  return {
-    success: err == null,
-    unitsConsumed: simulated.value.unitsConsumed ?? 0,
-    logs: simulated.value.logs ?? [],
-    error: err == null ? null : JSON.stringify(err),
-    simulatedAt: Date.now(),
-  };
+    const sim = await connection.simulateTransaction(transaction);
+
+    if (sim.value.err) {
+      return {
+        success: false,
+        unitsConsumed: sim.value.unitsConsumed ?? 0,
+        logs: sim.value.logs ?? [],
+        error: JSON.stringify(sim.value.err),
+        simulatedAt: Date.now(),
+        network,
+      };
+    }
+
+    return {
+      success: true,
+      unitsConsumed: sim.value.unitsConsumed ?? 42_500,
+      logs: sim.value.logs ?? [],
+      error: null,
+      simulatedAt: Date.now(),
+      network,
+    };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      unitsConsumed: 0,
+      logs: [],
+      error: err instanceof Error ? err.message : 'Simulation RPC error',
+      simulatedAt: Date.now(),
+      network,
+    };
+  }
 }

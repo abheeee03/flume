@@ -1,22 +1,32 @@
 export type HoldingHorizonDays = 7 | 30 | 90 | 365;
+export type NetworkCluster = 'devnet' | 'mainnet-beta';
 
 export type StrategyCategory =
-  | "plain_lending"
-  | "curated_vault"
-  | "leveraged_looping"
-  | "delta_neutral";
+  | 'plain_lending'
+  | 'dynamic_vault'
+  | 'curated_vault'
+  | 'leveraged_looping';
+
+export interface ProtocolNetworkAddresses {
+  programId: string;
+  marketOrVaultAddress: string;
+  reserveOrPoolAddress: string;
+  collateralOrShareMint: string;
+  underlyingMint: string;
+  explorerUrl?: string;
+}
 
 export interface RiskSignal {
   id: string;
   dimension:
-    | "smart_contract"
-    | "liquidity"
-    | "asset"
-    | "strategy"
-    | "dependencies"
-    | "incentives"
-    | "freshness";
-  severity: "low" | "medium" | "high";
+    | 'smart_contract'
+    | 'liquidity'
+    | 'asset'
+    | 'strategy'
+    | 'dependencies'
+    | 'incentives'
+    | 'freshness';
+  severity: 'low' | 'medium' | 'high';
   label: string;
   evidence: string;
 }
@@ -24,8 +34,9 @@ export interface RiskSignal {
 export interface YieldOpportunity {
   id: string;
   protocol: string;
+  protocolSlug: 'kamino' | 'meteora' | 'save' | 'marginfi' | 'drift';
   market: string;
-  assetSymbol: "USDC";
+  assetSymbol: 'USDC';
   assetMint: string;
   receiptShareSymbol: string;
   baseApy: number;
@@ -40,10 +51,15 @@ export interface YieldOpportunity {
     withdrawalBps: number;
   };
   strategyType: StrategyCategory;
-  oracleProvider: "Pyth" | "Switchboard" | "Pyth + Switchboard";
+  oracleProvider: 'Pyth' | 'Switchboard' | 'Pyth + Switchboard';
   auditStatus: string;
+  addresses: {
+    devnet: ProtocolNetworkAddresses;
+    mainnet: ProtocolNetworkAddresses;
+  };
+  activeAddresses: ProtocolNetworkAddresses;
   riskFlags: RiskSignal[];
-  dataSource: "live_mainnet_api" | "fallback_snapshot";
+  dataSource: 'live_mainnet_api' | 'fallback_snapshot';
   updatedAt: number;
 }
 
@@ -54,15 +70,19 @@ export interface UserPosition {
   depositedUsdc: number;
   rawShares: string;
   shareMintAddress: string;
+  programId: string;
+  marketAddress: string;
   currentBaseApy: number;
   currentRewardApy: number;
+  source: 'vybe_api' | 'onchain_rpc' | 'hybrid';
+  network: NetworkCluster;
   lastRefreshedAt: number;
-  preview: boolean;
 }
 
 export interface MigrationCostBreakdown {
   solanaBaseFeeUsd: number;
   priorityFeeUsd: number;
+  swapOrRoutingFeeUsd: number;
   sourceWithdrawalFeeUsd: number;
   destinationDepositFeeUsd: number;
   ataRentUsd: number;
@@ -84,11 +104,11 @@ export interface EvaluatedOpportunity {
   costs: MigrationCostBreakdown;
   breakEvenDays: number | null;
   breakEvenStatus:
-    | "current"
-    | "instant"
-    | "worth_it"
-    | "exceeds_horizon"
-    | "never_breaks_even";
+    | 'current'
+    | 'instant'
+    | 'worth_it'
+    | 'exceeds_horizon'
+    | 'never_breaks_even';
   isLiquiditySufficient: boolean;
   expectedDestinationUsdc: number;
   minimumDestinationUsdc: number;
@@ -100,28 +120,22 @@ export interface SimulationResult {
   logs: string[];
   error: string | null;
   simulatedAt: number;
+  network: NetworkCluster;
 }
 
-export interface OpportunitiesResponse {
-  opportunities: YieldOpportunity[];
-  fetchedAt: number;
-  dataSource: "live_mainnet_api" | "fallback_snapshot" | "mixed";
-}
-
-export interface MigrationBuildRequest {
-  owner: string;
-  sourceOpportunityId: string;
-  destinationOpportunityId: string;
+export interface BuiltMigrationTransaction {
+  serializedTransaction: string; // base64
+  network: NetworkCluster;
+  sourceProtocol: string;
+  destinationProtocol: string;
+  sourceProgramId: string;
+  destinationProgramId: string;
   amountUsdc: number;
+  netMigratedUsdc: number;
+  expectedDestinationSharesUi: number;
   minimumDestinationUsdc: number;
-}
-
-export interface MigrationBuildResponse {
-  transaction: string;
-  expectedDestinationUsdc: number;
-  minimumDestinationUsdc: number;
-  netWithdrawnUsdc: number;
-  sourceWithdrawalFeeUsd: number;
-  destinationDepositFeeUsd: number;
+  shareMint: string;
+  usdcMint: string;
   blockhash: string;
+  lastValidBlockHeight: number;
 }

@@ -1,98 +1,136 @@
-"use client";
+'use client';
 
-import { useCallback, useState } from "react";
-import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import type { Transaction } from "@solana/web3.js";
-import { executeMigration } from "@/lib/migration/executor";
-import { deserializeTransaction, simulateMigration } from "@/lib/migration/simulator";
-import type {
+import { useState, useCallback } from 'react';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { simulateMigrationTransaction } from '@/lib/migration/simulator';
+import { executeMigrationTransaction } from '@/lib/migration/executor';
+import {
+  BuiltMigrationTransaction,
   EvaluatedOpportunity,
-  MigrationBuildResponse,
   SimulationResult,
   UserPosition,
-} from "@/types/flume";
+} from '@/types/flume';
 
-export function useMigration(input: {
-  source: UserPosition | null;
-  onConfirmed: () => void;
-}) {
-  const { publicKey, sendTransaction } = useWallet();
+export function useMigration() {
   const { connection } = useConnection();
-  const [target, setTarget] = useState<EvaluatedOpportunity | null>(null);
-  const [built, setBuilt] = useState<MigrationBuildResponse | null>(null);
-  const [transaction, setTransaction] = useState<Transaction | null>(null);
-  const [simulation, setSimulation] = useState<SimulationResult | null>(null);
-  const [signature, setSignature] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const wallet = useWallet();
+  const queryClient = useQueryClient();
 
-  const closePreview = useCallback(() => {
-    setTarget(null);
-    setBuilt(null);
-    setTransaction(null);
-    setSimulation(null);
-    setError(null);
-    setPending(false);
-  }, []);
+  const [selectedEvaluation, setSelectedEvaluation] =
+    useState<EvaluatedOpportunity | null>(null);
+  const [builtTx, setBuiltTx] = useState<BuiltMigrationTransaction | null>(
+    null
+  );
+  const [simulation, setSimulation] = useState<SimulationResult | null>(null);
+  const [isBuilding, setIsBuilding] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [executionSignature, setExecutionSignature] = useState<string | null>(
+    null
+  );
+  const [error, setError] = useState<string | null>(null);
 
   const openPreview = useCallback(
-    async (row: EvaluatedOpportunity) => {
-      setTarget(row);
-      setBuilt(null);
-      setTransaction(null);
+    async (
+      evaluated: EvaluatedOpportunity,
+      currentPosition: UserPosition
+    ) => {
+      setSelectedEvaluation(evaluated);
+      setBuiltTx(null);
       setSimulation(null);
-      setSignature(null);
+      setExecutionSignature(null);
       setError(null);
-      if (!publicKey || !input.source || input.source.preview) return;
 
-      setPending(true);
+      if (!wallet.publicKey) {
+        return;
+      }
+
+      setIsBuilding(true);
       try {
-        const response = await fetch("/api/migration/build", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
+        const res = await fetch('/api/migration/build', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            owner: publicKey.toBase58(),
-            sourceOpportunityId: input.source.opportunityId,
-            destinationOpportunityId: row.opportunity.id,
-            amountUsdc: row.principalUsd,
-            minimumDestinationUsdc: row.minimumDestinationUsdc,
+            owner: wallet.publicKey.toBase58(),
+            sourceOpportunityId: currentPosition.opportunityId,
+            destinationOpportunityId: evaluated.opportunity.id,
+            amountUsdc: evaluated.principalUsd,
+            minimumDestinationUsdc: evaluated.minimumDestinationUsdc,
           }),
         });
-        const body = (await response.json()) as MigrationBuildResponse & { error?: string };
-        if (!response.ok) throw new Error(body.error ?? "Could not build the migration.");
-        const tx = deserializeTransaction(body.transaction);
-        setBuilt(body);
-        setTransaction(tx);
-        setSimulation(await simulateMigration(connection, tx));
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Simulation failed.");
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed to build transaction');
+        }
+
+        const built = data as BuiltMigrationTransaction;
+        setBuiltTx(built);
+
+        const simResult = await simulateMigrationTransaction(
+          connection,
+          built.serializedTransaction
+        );
+        setSimulation(simResult);
+      } catch (err: unknown) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Unable to prepare migration preview'
+        );
       } finally {
-        setPending(false);
+        setIsBuilding(false);
       }
     },
-    [connection, input.source, publicKey],
+    [connection, wallet.publicKey]
   );
 
-  const execute = useCallback(async () => {
-    if (!transaction) throw new Error("Simulate the migration before signing.");
-    if (!simulation?.success) throw new Error(simulation?.error ?? "Simulation did not succeed.");
-    const confirmed = await executeMigration(connection, sendTransaction, transaction);
-    setSignature(confirmed);
-    setTarget(null);
-    input.onConfirmed();
-    return confirmed;
-  }, [connection, input, sendTransaction, simulation, transaction]);
+  const executeMigration = useCallback(async () => {
+    if (!builtTx) {
+      setError('Transaction is not built yet.');
+      return;
+    }
+    setIsExecuting(true);
+    setError(null);
+
+    try {
+      const { signature } = await executeMigrationTransaction({
+        connection,
+        wallet,
+        base64Transaction: builtTx.serializedTransaction,
+        blockhash: builtTx.blockhash,
+        lastValidBlockHeight: builtTx.lastValidBlockHeight,
+      });
+
+      setExecutionSignature(signature);
+      await queryClient.invalidateQueries({ queryKey: ['flume-positions'] });
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : 'Transaction execution failed'
+      );
+    } finally {
+      setIsExecuting(false);
+    }
+  }, [builtTx, connection, queryClient, wallet]);
+
+  const closePreview = useCallback(() => {
+    setSelectedEvaluation(null);
+    setBuiltTx(null);
+    setSimulation(null);
+    setError(null);
+  }, []);
 
   return {
-    target,
-    built,
+    selectedEvaluation,
+    builtTx,
     simulation,
-    signature,
+    isBuilding,
+    isExecuting,
+    executionSignature,
     error,
-    pending,
     openPreview,
+    executeMigration,
     closePreview,
-    execute,
-    dismissReceipt: () => setSignature(null),
+    clearReceipt: () => setExecutionSignature(null),
   };
 }

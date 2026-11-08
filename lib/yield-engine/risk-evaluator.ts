@@ -1,98 +1,93 @@
-import type { RiskSignal, YieldOpportunity } from "@/types/flume";
+import { RiskSignal, YieldOpportunity } from '@/types/flume';
 
-const STALE_MS = 5 * 60 * 1000;
-
-function usd(value: number): string {
-  return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
-}
-
-export function evaluateRisk(
-  opportunity: YieldOpportunity,
-  principalUsd: number,
-  now = Date.now(),
+export function evaluateMarketRisks(
+  market: Omit<YieldOpportunity, 'riskFlags'>,
+  principalUsd: number = 5000
 ): RiskSignal[] {
   const signals: RiskSignal[] = [];
-  const { utilization } = opportunity;
 
-  if (utilization != null && utilization >= 0.9) {
-    const pct = Math.round(utilization * 100);
-    signals.push({
-      id: `${opportunity.id}-utilization-high`,
-      dimension: "liquidity",
-      severity: "high",
-      label: `Utilization ${pct}%: withdrawals may be delayed`,
-      evidence:
-        "Over 90% of supplied USDC is currently borrowed. Large withdrawals may be queued or capped until borrowers repay.",
-    });
-  } else if (utilization != null && utilization >= 0.8) {
-    const pct = Math.round(utilization * 100);
-    signals.push({
-      id: `${opportunity.id}-utilization-medium`,
-      dimension: "liquidity",
-      severity: "medium",
-      label: `Utilization ${pct}%: elevated borrow demand`,
-      evidence: "Pool utilization exceeds 80%.",
-    });
+  if (market.utilization !== null) {
+    if (market.utilization >= 0.9) {
+      signals.push({
+        id: `${market.id}-util-high`,
+        dimension: 'liquidity',
+        severity: 'high',
+        label: `Utilization ${Math.round(market.utilization * 100)}%: withdrawals may be delayed`,
+        evidence:
+          'Over 90% of supplied USDC is currently borrowed. Large withdrawals may be queued or capped until borrowers repay.',
+      });
+    } else if (market.utilization >= 0.8) {
+      signals.push({
+        id: `${market.id}-util-med`,
+        dimension: 'liquidity',
+        severity: 'medium',
+        label: `Utilization ${Math.round(market.utilization * 100)}%: elevated borrow demand`,
+        evidence: 'Pool utilization exceeds 80%.',
+      });
+    }
   }
 
   if (
-    opportunity.withdrawLiquidityUsd != null &&
-    principalUsd > opportunity.withdrawLiquidityUsd
+    market.withdrawLiquidityUsd !== null &&
+    principalUsd > market.withdrawLiquidityUsd
   ) {
     signals.push({
-      id: `${opportunity.id}-liquidity-shortfall`,
-      dimension: "liquidity",
-      severity: "high",
-      label: `Available liquidity ($${usd(opportunity.withdrawLiquidityUsd)}) below position size`,
+      id: `${market.id}-liq-cap`,
+      dimension: 'liquidity',
+      severity: 'high',
+      label: `Available liquidity ($${market.withdrawLiquidityUsd.toLocaleString()}) below position size`,
       evidence:
-        "Your position exceeds the immediately withdrawable liquidity in this pool.",
+        'Your position exceeds the immediately withdrawable liquidity in this pool.',
     });
   }
 
   const rewardShare =
-    opportunity.headlineApy > 0
-      ? opportunity.rewardApy / opportunity.headlineApy
-      : 0;
+    market.headlineApy > 0 ? market.rewardApy / market.headlineApy : 0;
   if (rewardShare >= 0.4) {
     signals.push({
-      id: `${opportunity.id}-incentive-heavy`,
-      dimension: "incentives",
-      severity: "high",
+      id: `${market.id}-incentive-heavy`,
+      dimension: 'incentives',
+      severity: 'high',
       label: `Incentive-heavy yield (${Math.round(rewardShare * 100)}% rewards)`,
       evidence:
-        "Over 40% of headline APY is paid in volatile emission tokens rather than organic borrower interest.",
+        'Over 40% of headline APY is paid in volatile emission tokens rather than organic borrower interest.',
     });
   }
 
-  if (opportunity.strategyType === "leveraged_looping") {
+  if (market.strategyType === 'leveraged_looping') {
     signals.push({
-      id: `${opportunity.id}-loop`,
-      dimension: "strategy",
-      severity: "high",
-      label: "Strategy: leveraged looping",
+      id: `${market.id}-strategy-loop`,
+      dimension: 'strategy',
+      severity: 'high',
+      label: 'Strategy: leveraged looping',
       evidence:
-        "Uses recursive borrow/lend leverage. Exposed to borrow rate spikes and liquidation thresholds.",
+        'Uses recursive borrow/lend leverage. Exposed to borrow rate spikes and liquidation thresholds.',
     });
-  }
-
-  if (opportunity.strategyType === "curated_vault") {
+  } else if (
+    market.strategyType === 'curated_vault' ||
+    market.strategyType === 'dynamic_vault'
+  ) {
     signals.push({
-      id: `${opportunity.id}-vault`,
-      dimension: "dependencies",
-      severity: "medium",
-      label: "Curated vault: external manager dependency",
+      id: `${market.id}-strategy-vault`,
+      dimension: 'strategy',
+      severity: 'low',
+      label:
+        market.strategyType === 'dynamic_vault'
+          ? 'Dynamic rebalance vault'
+          : 'Curated vault allocation',
       evidence:
-        "Relies on vault allocation logic and underlying protocol dependencies.",
+        'Automatically allocates across underlying lending reserves to capture optimal organic yield.',
     });
   }
 
-  if (now - opportunity.updatedAt > STALE_MS) {
+  if (Date.now() - market.updatedAt > 5 * 60 * 1000) {
     signals.push({
-      id: `${opportunity.id}-stale`,
-      dimension: "freshness",
-      severity: "medium",
-      label: "Data stale: >5m old",
-      evidence: "Market snapshot is older than 5 minutes; rates may have changed.",
+      id: `${market.id}-stale`,
+      dimension: 'freshness',
+      severity: 'medium',
+      label: 'Data stale: >5m old',
+      evidence:
+        'Market snapshot is older than 5 minutes; rates may have changed.',
     });
   }
 

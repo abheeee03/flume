@@ -1,177 +1,152 @@
 import {
-  MIN_OUTPUT_BUFFER,
-  PRIORITY_FEE_USD,
-  SOLANA_BASE_FEE_USD,
-} from "@/config/markets";
-import type {
   EvaluatedOpportunity,
   HoldingHorizonDays,
   MigrationCostBreakdown,
+  UserPosition,
   YieldOpportunity,
-} from "@/types/flume";
+} from '@/types/flume';
+import { evaluateMarketRisks } from './risk-evaluator';
 
-export interface EvaluateInput {
+const SOLANA_BASE_FEE_USD = 0.001;
+const PRIORITY_FEE_USD = 0.002;
+const SLIPPAGE_GUARD_BUFFER = 0.0005; // 0.05%
+
+export function evaluateOpportunity(params: {
   opportunity: YieldOpportunity;
-  /** Market the wallet is leaving. Null compares each row with a fresh deposit. */
-  current: YieldOpportunity | null;
+  currentPosition: UserPosition | null;
+  sourceOpportunity?: YieldOpportunity | null;
   principalUsd: number;
   holdingDays: HoldingHorizonDays;
-  /**
-   * Fraction of reward APY that counts toward net return.
-   * 0 ignores incentives, 1 counts the full headline reward.
-   */
-  rewardHaircut: number;
-}
+  rewardHaircut: number; // 0.0 to 1.0
+}): EvaluatedOpportunity {
+  const {
+    opportunity,
+    currentPosition,
+    sourceOpportunity,
+    principalUsd,
+    holdingDays,
+    rewardHaircut,
+  } = params;
 
-function clampHaircut(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(1, Math.max(0, value));
-}
+  const isCurrentPosition =
+    currentPosition?.opportunityId === opportunity.id;
+  const holdingYears = holdingDays / 365;
 
-export function effectiveApy(
-  opportunity: YieldOpportunity,
-  rewardHaircut: number,
-): number {
-  return opportunity.baseApy + opportunity.rewardApy * clampHaircut(rewardHaircut);
-}
+  const effectiveApy =
+    opportunity.baseApy + opportunity.rewardApy * rewardHaircut;
 
-/**
- * One-time cost of moving `principalUsd` into `destination`.
- * Staying put costs nothing. A move pays the source market's withdrawal fee,
- * then the destination's own withdrawal and deposit schedule. Charging the
- * destination withdrawal fee up front is what makes Drift's 10 bps and the
- * loop vault's 25 bps show up in the horizon comparison.
- */
-export function migrationCosts(
-  principalUsd: number,
-  source: YieldOpportunity | null,
-  destination: YieldOpportunity,
-  isCurrentPosition: boolean,
-): MigrationCostBreakdown {
+  const currentEffectiveApy = currentPosition
+    ? currentPosition.currentBaseApy +
+      currentPosition.currentRewardApy * rewardHaircut
+    : 0;
+
+  // Calculate migration fees
+  let costs: MigrationCostBreakdown;
   if (isCurrentPosition || principalUsd <= 0) {
-    return {
+    costs = {
       solanaBaseFeeUsd: 0,
       priorityFeeUsd: 0,
+      swapOrRoutingFeeUsd: 0,
       sourceWithdrawalFeeUsd: 0,
       destinationDepositFeeUsd: 0,
       ataRentUsd: 0,
       totalOneTimeCostUsd: 0,
     };
-  }
+  } else {
+    const sourceWithdrawBps = sourceOpportunity?.fees.withdrawalBps ?? 0;
+    const destDepositBps = opportunity.fees.depositBps ?? 0;
 
-  const sourceBps = source?.fees.withdrawalBps ?? 0;
-  const leaveFee = principalUsd * (sourceBps / 10_000);
-  const afterLeave = principalUsd - leaveFee;
-  const destinationWithdrawalFee =
-    afterLeave * (destination.fees.withdrawalBps / 10_000);
-  const afterWithdrawal = afterLeave - destinationWithdrawalFee;
-  const destinationDepositFeeUsd =
-    afterWithdrawal * (destination.fees.depositBps / 10_000);
+    const sourceWithdrawalFeeUsd =
+      principalUsd * (sourceWithdrawBps / 10000);
+    const amountAfterWithdraw = principalUsd - sourceWithdrawalFeeUsd;
+    const destinationDepositFeeUsd =
+      amountAfterWithdraw * (destDepositBps / 10000);
 
-  const sourceWithdrawalFeeUsd = leaveFee + destinationWithdrawalFee;
-  const solanaBaseFeeUsd = SOLANA_BASE_FEE_USD;
-  const priorityFeeUsd = PRIORITY_FEE_USD;
-
-  return {
-    solanaBaseFeeUsd,
-    priorityFeeUsd,
-    sourceWithdrawalFeeUsd,
-    destinationDepositFeeUsd,
-    ataRentUsd: 0,
-    totalOneTimeCostUsd:
-      solanaBaseFeeUsd +
-      priorityFeeUsd +
+    const totalOneTimeCostUsd =
+      SOLANA_BASE_FEE_USD +
+      PRIORITY_FEE_USD +
       sourceWithdrawalFeeUsd +
-      destinationDepositFeeUsd,
-  };
-}
+      destinationDepositFeeUsd;
 
-export function settlementAmounts(
-  principalUsd: number,
-  source: YieldOpportunity | null,
-  destination: YieldOpportunity,
-  isCurrentPosition: boolean,
-): { netWithdrawnUsdc: number; expectedDestinationUsdc: number } {
-  if (isCurrentPosition || principalUsd <= 0) {
-    return {
-      netWithdrawnUsdc: principalUsd,
-      expectedDestinationUsdc: principalUsd,
+    costs = {
+      solanaBaseFeeUsd: SOLANA_BASE_FEE_USD,
+      priorityFeeUsd: PRIORITY_FEE_USD,
+      swapOrRoutingFeeUsd: 0,
+      sourceWithdrawalFeeUsd,
+      destinationDepositFeeUsd,
+      ataRentUsd: 0,
+      totalOneTimeCostUsd,
     };
   }
 
-  const costs = migrationCosts(principalUsd, source, destination, false);
-  const leaveFee = principalUsd * ((source?.fees.withdrawalBps ?? 0) / 10_000);
-  const netWithdrawnUsdc = principalUsd - leaveFee;
-  const expectedDestinationUsdc =
-    netWithdrawnUsdc -
-    (costs.sourceWithdrawalFeeUsd - leaveFee) -
-    costs.destinationDepositFeeUsd;
-
-  return { netWithdrawnUsdc, expectedDestinationUsdc };
-}
-
-export function evaluateOpportunity(input: EvaluateInput): EvaluatedOpportunity {
-  const rewardHaircut = clampHaircut(input.rewardHaircut);
-  const principalUsd = Number.isFinite(input.principalUsd)
-    ? Math.max(0, input.principalUsd)
-    : 0;
-  const holdingDays = input.holdingDays;
-  const holdingYears = holdingDays / 365;
-  const isCurrentPosition = input.current?.id === input.opportunity.id;
-  const rate = effectiveApy(input.opportunity, rewardHaircut);
-  const currentRate =
-    input.current == null ? 0 : effectiveApy(input.current, rewardHaircut);
-  const costs = migrationCosts(
-    principalUsd,
-    input.current,
-    input.opportunity,
-    isCurrentPosition,
-  );
-
-  const grossReturnUsd = principalUsd * rate * holdingYears;
+  const grossReturnUsd = principalUsd * effectiveApy * holdingYears;
   const netReturnUsd = grossReturnUsd - costs.totalOneTimeCostUsd;
-  const currentKeepReturnUsd = principalUsd * currentRate * holdingYears;
-  const incrementalGainVsCurrentUsd =
-    input.current == null ? netReturnUsd : netReturnUsd - currentKeepReturnUsd;
+
   const netApyAfterCost =
     principalUsd > 0 && holdingYears > 0
-      ? rate - costs.totalOneTimeCostUsd / (principalUsd * holdingYears)
-      : rate;
+      ? effectiveApy -
+        costs.totalOneTimeCostUsd / (principalUsd * holdingYears)
+      : effectiveApy;
 
-  let breakEvenDays: number | null;
-  let breakEvenStatus: EvaluatedOpportunity["breakEvenStatus"];
+  const currentKeepReturnUsd = currentPosition
+    ? principalUsd * currentEffectiveApy * holdingYears
+    : 0;
+
+  const incrementalGainVsCurrentUsd = isCurrentPosition
+    ? 0
+    : netReturnUsd - currentKeepReturnUsd;
+
+  // Break-even calculation
+  let breakEvenDays: number | null = null;
+  let breakEvenStatus: EvaluatedOpportunity['breakEvenStatus'] = 'worth_it';
 
   if (isCurrentPosition) {
     breakEvenDays = 0;
-    breakEvenStatus = "current";
-  } else if (rate <= currentRate || principalUsd <= 0) {
+    breakEvenStatus = 'current';
+  } else if (effectiveApy <= currentEffectiveApy || principalUsd <= 0) {
     breakEvenDays = null;
-    breakEvenStatus = "never_breaks_even";
+    breakEvenStatus = 'never_breaks_even';
   } else {
+    const rateDiff = effectiveApy - currentEffectiveApy;
     breakEvenDays =
-      (costs.totalOneTimeCostUsd / (principalUsd * (rate - currentRate))) * 365;
-    if (breakEvenDays <= 0.01) breakEvenStatus = "instant";
-    else if (breakEvenDays <= holdingDays) breakEvenStatus = "worth_it";
-    else breakEvenStatus = "exceeds_horizon";
+      (costs.totalOneTimeCostUsd / (principalUsd * rateDiff)) * 365;
+
+    if (breakEvenDays <= 0.05) {
+      breakEvenStatus = 'instant';
+    } else if (breakEvenDays <= holdingDays) {
+      breakEvenStatus = 'worth_it';
+    } else {
+      breakEvenStatus = 'exceeds_horizon';
+    }
   }
 
-  const liquidity = input.opportunity.withdrawLiquidityUsd;
-  const isLiquiditySufficient = liquidity == null || principalUsd <= liquidity;
-  const { expectedDestinationUsdc } = settlementAmounts(
-    principalUsd,
-    input.current,
-    input.opportunity,
-    isCurrentPosition,
+  const isLiquiditySufficient =
+    opportunity.withdrawLiquidityUsd === null ||
+    principalUsd <= opportunity.withdrawLiquidityUsd;
+
+  const expectedDestinationUsdc = Math.max(
+    0,
+    principalUsd -
+      costs.sourceWithdrawalFeeUsd -
+      costs.destinationDepositFeeUsd
   );
 
+  const minimumDestinationUsdc =
+    expectedDestinationUsdc * (1 - SLIPPAGE_GUARD_BUFFER);
+
+  const dynamicRiskFlags = evaluateMarketRisks(opportunity, principalUsd);
+
   return {
-    opportunity: input.opportunity,
+    opportunity: {
+      ...opportunity,
+      riskFlags: dynamicRiskFlags,
+    },
     isCurrentPosition,
     principalUsd,
     holdingDays,
     holdingYears,
     rewardHaircut,
-    effectiveApy: rate,
+    effectiveApy,
     netApyAfterCost,
     grossReturnUsd,
     netReturnUsd,
@@ -181,6 +156,6 @@ export function evaluateOpportunity(input: EvaluateInput): EvaluatedOpportunity 
     breakEvenStatus,
     isLiquiditySufficient,
     expectedDestinationUsdc,
-    minimumDestinationUsdc: expectedDestinationUsdc * (1 - MIN_OUTPUT_BUFFER),
+    minimumDestinationUsdc,
   };
 }

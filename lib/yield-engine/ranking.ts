@@ -1,36 +1,41 @@
-import type {
+import {
   EvaluatedOpportunity,
   HoldingHorizonDays,
+  UserPosition,
   YieldOpportunity,
-} from "@/types/flume";
-import { evaluateOpportunity } from "@/lib/yield-engine/calculator";
-import { evaluateRisk } from "@/lib/yield-engine/risk-evaluator";
+} from '@/types/flume';
+import { evaluateOpportunity } from './calculator';
 
-export interface RankInput {
+export function rankOpportunities(params: {
   opportunities: YieldOpportunity[];
-  currentId: string | null;
+  currentPosition: UserPosition | null;
   principalUsd: number;
   holdingDays: HoldingHorizonDays;
   rewardHaircut: number;
-}
+}): EvaluatedOpportunity[] {
+  const {
+    opportunities,
+    currentPosition,
+    principalUsd,
+    holdingDays,
+    rewardHaircut,
+  } = params;
 
-export function rankOpportunities(input: RankInput): EvaluatedOpportunity[] {
-  const current =
-    input.opportunities.find((item) => item.id === input.currentId) ?? null;
+  const sourceOpportunity =
+    opportunities.find((o) => o.id === currentPosition?.opportunityId) ??
+    null;
 
-  const evaluated = input.opportunities.map((opportunity) => {
-    const withRisk: YieldOpportunity = {
-      ...opportunity,
-      riskFlags: evaluateRisk(opportunity, input.principalUsd),
-    };
-    return evaluateOpportunity({
-      opportunity: withRisk,
-      current,
-      principalUsd: input.principalUsd,
-      holdingDays: input.holdingDays,
-      rewardHaircut: input.rewardHaircut,
-    });
-  });
+  const evaluated = opportunities.map((opportunity) =>
+    evaluateOpportunity({
+      opportunity,
+      currentPosition,
+      sourceOpportunity,
+      principalUsd,
+      holdingDays,
+      rewardHaircut,
+    })
+  );
 
+  // Strictly sort by netReturnUsd descending (never raw headline APY)
   return evaluated.sort((a, b) => b.netReturnUsd - a.netReturnUsd);
 }

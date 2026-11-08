@@ -1,21 +1,41 @@
-import type { Connection, Transaction } from "@solana/web3.js";
+import { Connection, Transaction } from '@solana/web3.js';
+import { WalletContextState } from '@solana/wallet-adapter-react';
 
-type SendTransaction = (
-  transaction: Transaction,
-  connection: Connection,
-) => Promise<string>;
+export async function executeMigrationTransaction(params: {
+  connection: Connection;
+  wallet: WalletContextState;
+  base64Transaction: string;
+  blockhash: string;
+  lastValidBlockHeight: number;
+}): Promise<{ signature: string }> {
+  const {
+    connection,
+    wallet,
+    base64Transaction,
+    blockhash,
+    lastValidBlockHeight,
+  } = params;
 
-export async function executeMigration(
-  connection: Connection,
-  sendTransaction: SendTransaction,
-  transaction: Transaction,
-): Promise<string> {
-  const signature = await sendTransaction(transaction, connection);
-  const latest = await connection.getLatestBlockhash("confirmed");
-  await connection.confirmTransaction({ signature, ...latest }, "confirmed");
-  return signature;
-}
+  if (!wallet.publicKey || !wallet.sendTransaction) {
+    throw new Error('Please connect a Solana wallet before signing.');
+  }
 
-export function explorerTxUrl(signature: string): string {
-  return `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
+  const txBuffer = Buffer.from(base64Transaction, 'base64');
+  const transaction = Transaction.from(txBuffer);
+
+  const signature = await wallet.sendTransaction(transaction, connection, {
+    skipPreflight: false,
+    preflightCommitment: 'confirmed',
+  });
+
+  await connection.confirmTransaction(
+    {
+      signature,
+      blockhash,
+      lastValidBlockHeight,
+    },
+    'confirmed'
+  );
+
+  return { signature };
 }

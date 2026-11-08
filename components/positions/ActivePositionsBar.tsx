@@ -76,9 +76,11 @@ export function ActivePositionsBar({
         <CardDescription>
           {positions[0]?.preview
             ? "Simulating $5,000 in the Save main pool until a wallet connects."
-            : usdc != null
-              ? `Demo USDC available: ${formatUsd(usdc)}.`
-              : "Receipt balances read from devnet."}
+            : positions[0]?.source === "vybe"
+              ? "Live Solana DeFi positions indexed via Vybe Network."
+              : usdc != null
+                ? `Demo USDC available: ${formatUsd(usdc)}.`
+                : "Receipt balances read from devnet."}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -93,7 +95,13 @@ export function ActivePositionsBar({
                 <p className="type-heading-sm">
                   {position.protocol} {position.market}
                 </p>
-                {position.preview ? <Badge variant="outline">Simulated</Badge> : null}
+                {position.preview ? (
+                  <Badge variant="outline">Simulated</Badge>
+                ) : position.source === "vybe" ? (
+                  <Badge variant="ok">Vybe Network</Badge>
+                ) : (
+                  <Badge variant="outline">Devnet</Badge>
+                )}
               </div>
               <p className="type-body-sm text-text-2 tabular-nums">
                 {formatUsd(position.depositedUsdc)} USDC

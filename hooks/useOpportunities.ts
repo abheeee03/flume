@@ -1,16 +1,26 @@
-"use client";
+'use client';
 
-import { useQuery } from "@tanstack/react-query";
-import type { OpportunitiesResponse } from "@/types/flume";
+import { useQuery } from '@tanstack/react-query';
+import { NetworkCluster, YieldOpportunity } from '@/types/flume';
+
+interface OpportunitiesResponse {
+  opportunities: YieldOpportunity[];
+  cluster: NetworkCluster;
+  devnet: boolean;
+  updatedAt: number;
+}
 
 export function useOpportunities() {
-  return useQuery({
-    queryKey: ["opportunities"],
-    queryFn: async (): Promise<OpportunitiesResponse> => {
-      const response = await fetch("/api/opportunities");
-      if (!response.ok) throw new Error("Could not load yield markets.");
-      return response.json() as Promise<OpportunitiesResponse>;
+  return useQuery<OpportunitiesResponse>({
+    queryKey: ['flume-opportunities'],
+    queryFn: async () => {
+      const res = await fetch('/api/opportunities');
+      if (!res.ok) {
+        throw new Error('Failed to fetch yield opportunities');
+      }
+      return res.json();
     },
-    refetchInterval: 30_000,
+    refetchInterval: 45_000,
+    staleTime: 20_000,
   });
 }
